@@ -1292,6 +1292,34 @@ func TestDropPartitionWithGlobalIndex(t *testing.T) {
 	require.Equal(t, 2, cnt)
 }
 
+func TestDropColumnWithGlobalIndex(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use test")
+	tk.MustExec("create table t (a int, b int, key idx_g(a) global, key idx_l(a)) partition by hash(b) partitions 4")
+	tk.MustExec("insert into t values (1, 1), (2, 2), (3, 3), (4, 4)")
+	tblInfo := external.GetTableByName(t, tk, "test", "t").Meta()
+	globalIdx := tblInfo.FindIndexByName("idx_g")
+	localIdx := tblInfo.FindIndexByName("idx_l")
+	require.True(t, globalIdx.Global)
+	require.False(t, localIdx.Global)
+
+	tk.MustExec("alter table t drop column a")
+
+	checkDeleteRange := func(tableID, indexID int64) {
+		// The delete-range emulator moves start_key forward as it deletes, so match by prefix.
+		keyPrefix := fmt.Sprintf("%x", []byte(tablecodec.EncodeTableIndexPrefix(tableID, indexID)))
+		tk.MustQuery(`select count(*) from (select start_key from mysql.gc_delete_range
+			union all select start_key from mysql.gc_delete_range_done) r where start_key like concat(?, "%")`, keyPrefix).Check(testkit.Rows("1"))
+	}
+	// Global index keys live under the logical table ID.
+	checkDeleteRange(tblInfo.ID, globalIdx.ID)
+	// Local index keys live under each partition ID.
+	for _, def := range tblInfo.Partition.Definitions {
+		checkDeleteRange(def.ID, localIdx.ID)
+	}
+}
+
 func TestDropMultiPartitionWithGlobalIndex(t *testing.T) {
 	store := testkit.CreateMockStore(t)
 	tk := testkit.NewTestKit(t, store)

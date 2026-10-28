@@ -157,7 +157,8 @@ func expectedDeleteRangeCnt(ctx delRangeCntCtx, job *model.Job) (int, error) {
 			return 0, errors.Trace(err)
 		}
 
-		physicalCnt := max(len(args.PartitionIDs), 1)
+		// Partitioned tables also get a del-range under the table ID for global indexes.
+		physicalCnt := len(args.PartitionIDs) + 1
 		return physicalCnt * len(args.IndexIDs), nil
 	case model.ActionModifyColumn:
 		args, err := model.GetFinishedModifyColumnArgs(job)

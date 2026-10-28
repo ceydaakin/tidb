@@ -425,6 +425,12 @@ func insertJobIntoDeleteRangeTable(ctx context.Context, wrapper DelRangeExecWrap
 			if len(args.PartitionIDs) == 0 {
 				return errors.Trace(doBatchDeleteIndiceRange(ctx, wrapper, job.ID, job.TableID, args.IndexIDs, ea, "drop column: table ID"))
 			}
+			// Global index keys have the t{tableID}_ prefix and the job args do not record
+			// which dropped indexes are global, so also cover the logical table ID.
+			// Index IDs are never reused, so this range holds no live data.
+			if err := doBatchDeleteIndiceRange(ctx, wrapper, job.ID, job.TableID, args.IndexIDs, ea, "drop column: table ID for global index"); err != nil {
+				return errors.Trace(err)
+			}
 			for _, pid := range args.PartitionIDs {
 				if err := doBatchDeleteIndiceRange(ctx, wrapper, job.ID, pid, args.IndexIDs, ea, "drop column: partition table ID"); err != nil {
 					return errors.Trace(err)

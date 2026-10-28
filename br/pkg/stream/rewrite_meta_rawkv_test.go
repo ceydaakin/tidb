@@ -1066,6 +1066,11 @@ func TestDeleteRangeForMDDLJob(t *testing.T) {
 	// drop column for table0
 	err = schemaReplace.processIngestIndexAndDeleteRangeFromJob(dropTable0ColumnJob)
 	require.NoError(t, err)
+	// global index keys live under the logical table ID
+	qargs = <-midr.queryCh
+	require.Equal(t, len(qargs.ParamsList), 2)
+	require.Equal(t, encodeTableIndexKey(mDDLJobTable0NewID, int64(2)), qargs.ParamsList[0].StartKey)
+	require.Equal(t, encodeTableIndexKey(mDDLJobTable0NewID, int64(3)), qargs.ParamsList[1].StartKey)
 	oldPartitionIDMap = make(map[string]struct{})
 	for range len(mDDLJobALLNewPartitionIDSet) {
 		qargs = <-midr.queryCh
