@@ -164,7 +164,11 @@ func expectedDeleteRangeCnt(ctx delRangeCntCtx, job *model.Job) (int, error) {
 		if err != nil {
 			return 0, errors.Trace(err)
 		}
-		physicalCnt := max(len(args.PartitionIDs), 1)
+		physicalCnt := 1
+		if len(args.PartitionIDs) > 0 {
+			// The logical table ID is added for global indexes.
+			physicalCnt = len(args.PartitionIDs) + 1
+		}
 		return physicalCnt * ctx.deduplicateIdxCnt(args.IndexIDs), nil
 	case model.ActionMultiSchemaChange:
 		totalExpectedCnt := 0

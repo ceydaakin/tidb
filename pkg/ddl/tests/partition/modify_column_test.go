@@ -15,6 +15,7 @@
 package partition
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"sync/atomic"
@@ -24,6 +25,7 @@ import (
 	"github.com/pingcap/tidb/pkg/errno"
 	"github.com/pingcap/tidb/pkg/kv"
 	"github.com/pingcap/tidb/pkg/meta/model"
+	"github.com/pingcap/tidb/pkg/tablecodec"
 	"github.com/pingcap/tidb/pkg/testkit"
 	"github.com/pingcap/tidb/pkg/testkit/external"
 	"github.com/pingcap/tidb/pkg/testkit/testfailpoint"
@@ -165,6 +167,33 @@ func TestModifyColumnPartitionedTableGlobalIndexConsistency(t *testing.T) {
 	tk.MustContainErrMsg("insert into t_global_idx values (100,1,30)", "Duplicate entry '30'")
 	tk.MustExec("insert into t_global_idx values (100,100,100)")
 	tk.MustQuery("select count(*) from t_global_idx").Check(testkit.Rows("5"))
+}
+
+// Modifying a globally indexed column with reorg must queue the old global index range under the logical table ID.
+func TestModifyColumnPartitionedTableGlobalIndexDeleteRange(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use test")
+	tk.MustExec("create table t (a int, b int, c int, key idx_g(a) global, key idx_l(a, c)) partition by hash(b) partitions 4")
+	tk.MustExec("insert into t values (1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4)")
+	tblInfo := external.GetTableByName(t, tk, "test", "t").Meta()
+	oldGlobalID := tblInfo.FindIndexByName("idx_g").ID
+	oldLocalID := tblInfo.FindIndexByName("idx_l").ID
+
+	tk.MustExec("alter table t modify column a varchar(20)")
+	tblInfo = external.GetTableByName(t, tk, "test", "t").Meta()
+	require.NotEqual(t, oldGlobalID, tblInfo.FindIndexByName("idx_g").ID)
+
+	// GC may advance start_key of a done range, so match the end key.
+	countRange := func(physicalID, indexID int64) string {
+		endKey := hex.EncodeToString(tablecodec.EncodeTableIndexPrefix(physicalID, indexID+1))
+		return tk.MustQuery(`select count(*) from (select end_key from mysql.gc_delete_range union all
+			select end_key from mysql.gc_delete_range_done) r where end_key = ?`, endKey).Rows()[0][0].(string)
+	}
+	require.Equal(t, "1", countRange(tblInfo.ID, oldGlobalID))
+	for _, def := range tblInfo.Partition.Definitions {
+		require.Equal(t, "1", countRange(def.ID, oldLocalID))
+	}
 }
 
 func adminCheckPartitionTable(tk *testkit.TestKit, tableName string) {

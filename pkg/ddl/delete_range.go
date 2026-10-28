@@ -448,6 +448,8 @@ func insertJobIntoDeleteRangeTable(ctx context.Context, wrapper DelRangeExecWrap
 				return errors.Trace(err)
 			}
 		}
+		// global indexes of a partitioned table are stored under the logical table ID.
+		return errors.Trace(doBatchDeleteIndiceRange(ctx, wrapper, job.ID, job.TableID, indexIDs, ea, "modify column: table ID"))
 	}
 	return nil
 }
