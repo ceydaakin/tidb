@@ -953,3 +953,11 @@ execute _ldbstmt;
 drop database if exists lock_db1;
 drop database if exists lock_db2;
 deallocate prepare _ldbstmt;
+
+# TestIssue72475
+drop table if exists t_test, t1;
+create table t_test (id varchar(32) not null, a int, b int, flag varchar(16), owner varchar(32), primary key (id) clustered, key idx_t_test_ab (a, b, flag)) charset utf8mb4 collate utf8mb4_0900_ai_ci;
+create table t1 (id bigint primary key, ref_id varchar(32), kind varchar(8), handler varchar(32), creator varchar(32), flag varchar(16)) charset utf8mb4 collate utf8mb4_general_ci;
+insert into t_test values ('row-a', 2, 3, 'KEEP', 'user-a');
+insert into t1 values (1, 'row-a', 'K', 'user-a', 'user-b', 'KEEP');
+select count(*) from t_test where flag = 'KEEP' and (a = 2 or a is null) and b = 3 and (owner = 'user-a' or exists (select 1 from t1 where t1.ref_id = t_test.id collate utf8mb4_general_ci and t1.kind = 'K' and t1.handler = 'user-a' and t1.flag = 'KEEP') or exists (select 1 from t1 where t1.ref_id = t_test.id collate utf8mb4_general_ci and t1.kind = 'K' and t1.creator = 'user-b' and t1.flag = 'KEEP'));

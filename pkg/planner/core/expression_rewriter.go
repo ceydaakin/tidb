@@ -1864,7 +1864,10 @@ func (er *expressionRewriter) Leave(originInNode ast.Node) bool {
 			}
 		}
 		// SetCollationExpr sets the collation explicitly, even when the evaluation type of the expression is non-string.
-		if _, ok := arg.(*expression.Column); ok || arg.GetType(er.sctx.GetEvalCtx()).GetType() == mysql.TypeJSON {
+		// A CorrelatedColumn shares its RetType with the outer column, so it must not be modified in place either.
+		_, isCol := arg.(*expression.Column)
+		_, isCorCol := arg.(*expression.CorrelatedColumn)
+		if isCol || isCorCol || arg.GetType(er.sctx.GetEvalCtx()).GetType() == mysql.TypeJSON {
 			if arg.GetType(er.sctx.GetEvalCtx()).GetType() == mysql.TypeEnum || arg.GetType(er.sctx.GetEvalCtx()).GetType() == mysql.TypeSet {
 				er.err = plannererrors.ErrNotSupportedYet.GenWithStackByArgs("use collate clause for enum or set")
 				break
