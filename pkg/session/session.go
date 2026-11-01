@@ -2979,6 +2979,13 @@ func (s *session) validateStatementReadOnlyInStaleness(stmtNode ast.StmtNode) er
 			return errors.New(errMsg)
 		}
 		return nil
+	case *ast.CompareMaterializedViewStmt:
+		// OUTPUT INTO TABLE creates and fills a table through internal sessions,
+		// so it would persist writes while the stale transaction stays active.
+		if v.OutputTable != nil {
+			return errors.New(errMsg)
+		}
+		return nil
 	default:
 	}
 	// covered DeleteStmt/InsertStmt/UpdateStmt/CallStmt/LoadDataStmt

@@ -44,6 +44,7 @@ func TestCompareMaterializedView(t *testing.T) {
 	t.Run("NullableGroupKeyMinMax", testCompareMaterializedViewNullableGroupKeyMinMax)
 	t.Run("EmptyInputs", testCompareMaterializedViewEmptyInputs)
 	t.Run("RejectsReadTSOAfterSnapshot", testCompareMaterializedViewRejectsReadTSOAfterSnapshot)
+	t.Run("OutputRejectedInStaleReadOnlyTxn", testCompareMaterializedViewOutputRejectedInStaleReadOnlyTxn)
 }
 
 func nextCompareTimestamp(t *testing.T, tk *testkit.TestKit) string {
@@ -453,4 +454,25 @@ func testCompareMaterializedViewRejectsReadTSOAfterSnapshot(t *testing.T) {
 	compareTS := nextCompareTimestamp(t, tk)
 	err := tk.QueryToErr(fmt.Sprintf("compare materialized view test.mv_compare_tso_guard as of timestamp '%s'", compareTS))
 	require.ErrorContains(t, err, "LAST_SUCCESS_READ_TSO")
+}
+
+func testCompareMaterializedViewOutputRejectedInStaleReadOnlyTxn(t *testing.T) {
+	store, _ := testkit.CreateMockStoreAndDomain(t)
+	tk := newMViewTestKit(t, store)
+	tk.MustExec("use test")
+	tk.MustExec("set @@session.time_zone = '+00:00'")
+	tk.MustExec("create table t_compare_stale (a int not null, b int not null)")
+	tk.MustExec("insert into t_compare_stale values (1, 10), (1, 5), (2, 7)")
+	tk.MustExec("create materialized view log on t_compare_stale (a, b) purge next date_add(now(), interval 1 hour)")
+	tk.MustExec("create materialized view mv_compare_stale (a, s, cnt) refresh fast next date_add(now(), interval 1 hour) as select a, sum(b), count(1) from t_compare_stale group by a")
+
+	compareTS := nextCompareTimestamp(t, tk)
+	compareSQL := fmt.Sprintf("compare materialized view test.mv_compare_stale as of timestamp '%s'", compareTS)
+	tk.MustExec(fmt.Sprintf("start transaction read only as of timestamp '%s'", compareTS))
+	err := tk.ExecToErr(compareSQL + " output into table test.mv_compare_stale_diff")
+	require.ErrorContains(t, err, "only support read-only statement during read-only staleness transactions")
+	tk.MustExec("rollback")
+
+	tkObserver := newMViewTestKit(t, store)
+	tkObserver.MustQuery("select count(*) from information_schema.tables where table_schema = 'test' and table_name = 'mv_compare_stale_diff'").Check(testkit.Rows("0"))
 }
