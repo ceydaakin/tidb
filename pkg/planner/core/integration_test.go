@@ -62,6 +62,23 @@ func TestReverseExpressionSortNullableColumn(t *testing.T) {
 	require.NotContains(t, fmt.Sprint(plan), "Sort")
 }
 
+func TestNullConstantExpressionSort(t *testing.T) {
+	// Issue #72560: NULL-c is NULL for every row, so it must not be treated as an index order on c.
+	tk := testkit.NewTestKit(t, testkit.CreateMockStore(t))
+	tk.MustExec("use test")
+	tk.MustExec("create table null_order (id int primary key, c int not null, key i(c))")
+	tk.MustExec("insert into null_order values (1,30),(2,10),(3,20)")
+	for _, expr := range []string{"null-c", "c-null", "c+null", "null+c", "-(null-c)", "(c+1)-null"} {
+		for _, dir := range []string{"", " desc"} {
+			tk.MustQuery(fmt.Sprintf("select id from null_order use index(i) order by %s%s,id", expr, dir)).Check(testkit.Rows("1", "2", "3"))
+		}
+	}
+	// A non-NULL constant still lets the index provide the order.
+	tk.MustQuery("select id from null_order use index(i) order by 0-c desc,id").Check(testkit.Rows("2", "3", "1"))
+	plan := tk.MustQuery("explain format='brief' select id from null_order use index(i) order by 0-c desc,id").Rows()
+	require.NotContains(t, fmt.Sprint(plan), "Sort")
+}
+
 func TestBinaryLiteralMinMaxHaving(t *testing.T) {
 	store := testkit.CreateMockStore(t)
 	tk := testkit.NewTestKit(t, store)

@@ -860,16 +860,19 @@ func (sf *ScalarFunction) GetSingleColumn(reverse bool) (*Column, bool) {
 		args := sf.GetArgs()
 		switch tp := args[0].(type) {
 		case *Column:
-			if _, ok := args[1].(*Constant); !ok {
+			if !isNonNullConstant(args[1]) {
 				return nil, false
 			}
 			return tp, reverse
 		case *ScalarFunction:
-			if _, ok := args[1].(*Constant); !ok {
+			if !isNonNullConstant(args[1]) {
 				return nil, false
 			}
 			return tp.GetSingleColumn(reverse)
 		case *Constant:
+			if !isNonNullConstant(tp) {
+				return nil, false
+			}
 			switch rtp := args[1].(type) {
 			case *Column:
 				return rtp, reverse
@@ -882,16 +885,19 @@ func (sf *ScalarFunction) GetSingleColumn(reverse bool) (*Column, bool) {
 		args := sf.GetArgs()
 		switch tp := args[0].(type) {
 		case *Column:
-			if _, ok := args[1].(*Constant); !ok {
+			if !isNonNullConstant(args[1]) {
 				return nil, false
 			}
 			return tp, reverse
 		case *ScalarFunction:
-			if _, ok := args[1].(*Constant); !ok {
+			if !isNonNullConstant(args[1]) {
 				return nil, false
 			}
 			return tp.GetSingleColumn(reverse)
 		case *Constant:
+			if !isNonNullConstant(tp) {
+				return nil, false
+			}
 			switch rtp := args[1].(type) {
 			case *Column:
 				return rtp, !reverse
@@ -911,6 +917,15 @@ func (sf *ScalarFunction) GetSingleColumn(reverse bool) (*Column, bool) {
 		return nil, false
 	}
 	return nil, false
+}
+
+// isNonNullConstant reports whether expr is a constant whose value is fixed and
+// not NULL. Adding or subtracting NULL yields NULL for every row, so such an
+// expression carries no ordering of its column. Parameter markers and deferred
+// expressions are rejected because a cached plan may see a NULL value later.
+func isNonNullConstant(expr Expression) bool {
+	con, ok := expr.(*Constant)
+	return ok && con.ParamMarker == nil && con.DeferredExpr == nil && !con.Value.IsNull()
 }
 
 // Coercibility returns the coercibility value which is used to check collations.
