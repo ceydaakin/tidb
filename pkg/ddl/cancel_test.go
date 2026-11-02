@@ -203,6 +203,7 @@ var allTestCase = []testCancelJob{
 	{"alter table t alter index idx_v invisible", false, model.StatePublic, false, true, nil},
 	// Exchange partition.
 	{"alter table t_partition exchange partition p0 with table t_partition2", true, model.StateNone, true, false, []string{"create table t_partition2(c1 int, c2 int, c3 int)", "set @@tidb_enable_exchange_partition=1"}},
+	{"alter table t_partition exchange partition p0 with table t_partition2", true, model.StateWriteOnly, true, false, nil},
 	{"alter table t_partition exchange partition p0 with table t_partition2", false, model.StatePublic, false, true, nil},
 	// Add partition.
 	{"alter table t_partition add partition (partition p6 values less than (8192))", true, model.StateNone, true, false, nil},
