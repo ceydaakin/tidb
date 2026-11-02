@@ -478,6 +478,9 @@ func (r *StmtRecord) Add(info *stmtsummary.StmtExecInfo) {
 
 // Merge merges the statistics of another StmtRecord to this StmtRecord.
 func (r *StmtRecord) Merge(other *StmtRecord) {
+	// An empty aggregate carries placeholder seen times; take them from the
+	// first merged record instead of comparing against them.
+	isEmpty := r.ExecCount == 0
 	// User
 	for user := range other.AuthUsers {
 		r.AuthUsers[user] = struct{}{}
@@ -632,10 +635,10 @@ func (r *StmtRecord) Merge(other *StmtRecord) {
 	if r.MaxDisk < other.MaxDisk {
 		r.MaxDisk = other.MaxDisk
 	}
-	if r.FirstSeen.After(other.FirstSeen) {
+	if isEmpty || r.FirstSeen.After(other.FirstSeen) {
 		r.FirstSeen = other.FirstSeen
 	}
-	if r.LastSeen.Before(other.LastSeen) {
+	if isEmpty || r.LastSeen.Before(other.LastSeen) {
 		r.LastSeen = other.LastSeen
 	}
 	r.ExecRetryCount += other.ExecRetryCount

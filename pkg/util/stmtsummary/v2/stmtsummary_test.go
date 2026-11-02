@@ -528,3 +528,19 @@ func TestEvictedConcurrentWithRotate(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestEvictedAggregateSeenTimesFromRecords(t *testing.T) {
+	e := newStmtEvicted()
+	// Executions that start after the aggregate is created must not be hidden
+	// behind its creation time.
+	base := time.Now().Add(time.Hour)
+	record1 := &StmtRecord{ExecCount: 1, FirstSeen: base.Add(2 * time.Second), LastSeen: base.Add(3 * time.Second)}
+	record2 := &StmtRecord{ExecCount: 1, FirstSeen: base, LastSeen: base.Add(time.Second)}
+	e.add(&stmtsummary.StmtDigestKey{}, record1, false)
+	e.add(&stmtsummary.StmtDigestKey{}, record2, false)
+	for _, agg := range []*StmtRecord{e.other, e.otherForPersist} {
+		require.Equal(t, int64(2), agg.ExecCount)
+		require.Equal(t, record2.FirstSeen, agg.FirstSeen)
+		require.Equal(t, record1.LastSeen, agg.LastSeen)
+	}
+}
