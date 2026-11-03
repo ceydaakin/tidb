@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/pingcap/kvproto/pkg/coprocessor"
+	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/tidb/pkg/expression"
 	"github.com/pingcap/tidb/pkg/infoschema"
 	"github.com/pingcap/tidb/pkg/kv"
@@ -44,6 +45,7 @@ import (
 	"github.com/pingcap/tidb/pkg/util/stringutil"
 	"github.com/pingcap/tidb/pkg/util/timeutil"
 	"github.com/pingcap/tipb/go-tipb"
+	"github.com/tikv/client-go/v2/tikv"
 	"go.uber.org/zap"
 )
 
@@ -1473,6 +1475,13 @@ func (e *SlowQueryExtractor) buildTimeRangeFromKeyRange(keyRanges []*coprocessor
 }
 
 func (e *SlowQueryExtractor) decodeBytesToTime(bs []byte) (int64, error) {
+	if len(bs) > 0 && !kv.Key(bs).HasPrefix(tablecodec.TablePrefix()) {
+		// With API v2, client-go adds the keyspace prefix to the cop key ranges
+		// sent to a TiDB server, so remove it before decoding the time.
+		if _, k, err := tikv.DecodeKey(bs, kvrpcpb.APIVersion_V2); err == nil {
+			bs = k
+		}
+	}
 	if len(bs) >= tablecodec.RecordRowKeyLen {
 		t, err := tablecodec.DecodeRowKey(bs)
 		if err != nil {
