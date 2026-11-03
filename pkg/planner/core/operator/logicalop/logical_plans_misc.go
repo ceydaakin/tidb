@@ -141,7 +141,20 @@ func pruneByItems(p base.LogicalPlan, old []*util.ByItems) (byItems []*util.ByIt
 	prunedByItems := make([]*util.ByItems, 0)
 	byItems = make([]*util.ByItems, 0, len(old))
 	seen := make(map[string]struct{}, len(old))
+	// keyCols collects the plain columns ordered so far. Once they cover a
+	// NOT NULL unique key of the child, no two input rows tie on the items so
+	// far, so the remaining items cannot change the order and are dropped.
+	// Key info is only present after BuildKeySolver, i.e. in the second
+	// column pruning pass.
+	childSchema := p.Children()[0].Schema()
+	keyCols := make([]*expression.Column, 0, len(old))
 	for _, byItem := range old {
+		if len(childSchema.PKOrUK) > 0 && len(keyCols) > 0 && childSchema.IsUnique(true, keyCols...) {
+			break
+		}
+		if col, ok := byItem.Expr.(*expression.Column); ok {
+			keyCols = append(keyCols, col)
+		}
 		pruned := true
 		hash := string(byItem.Expr.HashCode())
 		_, hashMatch := seen[hash]

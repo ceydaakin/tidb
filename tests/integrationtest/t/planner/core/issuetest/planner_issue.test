@@ -953,3 +953,19 @@ execute _ldbstmt;
 drop database if exists lock_db1;
 drop database if exists lock_db2;
 deallocate prepare _ldbstmt;
+
+# TestIssue72585
+# ORDER BY items after a NOT NULL unique key prefix are redundant, so ORDER BY ... LIMIT can still use the key order.
+drop table if exists t72585;
+create table t72585 (c0 int primary key, c1 int not null, c2 int, c3 int not null, unique key uk_c2(c2), unique key uk_c3(c3));
+insert into t72585 values (1, 3, null, 30), (2, 2, null, 20), (3, 1, 1, 10);
+explain format = 'plan_tree' select c0 from t72585 order by c0, c1 limit 1;
+explain format = 'plan_tree' select c0 from t72585 order by c0 desc, c1 limit 1;
+explain format = 'plan_tree' select c3 from t72585 order by c3, c1 limit 1;
+explain format = 'plan_tree' select c0 from t72585 order by c1, c0 limit 1;
+explain format = 'plan_tree' select c2 from t72585 order by c2, c1 limit 1;
+select c0 from t72585 order by c0, c1 limit 1;
+select c0 from t72585 order by c0 desc, c1 limit 1;
+select c3 from t72585 order by c3, c1 limit 1;
+select c2, c1 from t72585 order by c2, c1 limit 2;
+drop table t72585;

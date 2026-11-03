@@ -2535,6 +2535,10 @@ func (b *PlanBuilder) buildSortWithCheck(ctx context.Context, p base.LogicalPlan
 	}
 	sort.ByItems = exprs
 	sort.SetChildren(p)
+	if len(exprs) > 1 {
+		// Key info lets column pruning drop ORDER BY items that follow a unique key, see #72585.
+		b.optFlag |= rule.FlagBuildKeyInfo
+	}
 	return sort, nil
 }
 
