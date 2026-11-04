@@ -141,4 +141,30 @@ drop materialized view mv_bit;
 drop materialized view log on t_mv_bit;
 drop table t_mv_bit;
 
+# SUM FAST refresh must not negate BIGINT UNSIGNED >= 2^63 or INT64_MIN as int64 (#72615).
+create table t_mv_sum_ext (
+  id int primary key, g int not null,
+  u bigint unsigned not null, s bigint, key(g)
+);
+create materialized view log on t_mv_sum_ext (g, u, s);
+create materialized view mv_sum_ext (g, cnt, su, cs, ss) refresh fast as
+select g, count(1), sum(u), count(s), sum(s) from t_mv_sum_ext group by g;
+insert into t_mv_sum_ext values
+  (1, 1, 18446744073709551615, -9223372036854775808),
+  (2, 1, 9223372036854775808, null),
+  (3, 2, 1, 5);
+refresh materialized view mv_sum_ext fast;
+select g, cnt, su, cs, ss from mv_sum_ext order by g;
+update t_mv_sum_ext set u = 9223372036854775809, s = 7 where id = 1;
+delete from t_mv_sum_ext where id = 2;
+update t_mv_sum_ext set s = null where id = 3;
+refresh materialized view mv_sum_ext fast;
+select g, cnt, su, cs, ss from mv_sum_ext order by g;
+delete from t_mv_sum_ext where id = 1;
+refresh materialized view mv_sum_ext fast;
+select g, cnt, su, cs, ss from mv_sum_ext order by g;
+drop materialized view mv_sum_ext;
+drop materialized view log on t_mv_sum_ext;
+drop table t_mv_sum_ext;
+
 set tidb_mview_enable = off;

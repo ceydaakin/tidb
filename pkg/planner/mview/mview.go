@@ -1394,9 +1394,25 @@ func buildMLogDeltaSelect(
 			if err != nil {
 				return nil, err
 			}
+			// Negate after aggregation, not per row: `-v` on BIGINT UNSIGNED >= 2^63 or on
+			// INT64_MIN overflows int64 (#72615), while SUM over integers already yields DECIMAL.
+			// COALESCE keeps SUM's NULL semantics: NULL only when every argument is NULL.
 			addedCond := binary(opcode.EQ, oldNewCol, ast.NewValueExpr(int64(1), "", ""))
+			addedSum := func() ast.ExprNode {
+				return aggSum(ifExpr(addedCond, argExpr, ast.NewValueExpr(nil, "", "")))
+			}
+			removedSum := func() ast.ExprNode {
+				return aggSum(ifExpr(addedCond, ast.NewValueExpr(nil, "", ""), argExpr))
+			}
 			phase1Fields = append(phase1Fields, &ast.SelectField{
-				Expr:   aggSum(ifExpr(addedCond, argExpr, &ast.UnaryOperationExpr{Op: opcode.Minus, V: argExpr})),
+				Expr: &ast.FuncCallExpr{
+					FnName: ast.NewCIStr(ast.Coalesce),
+					Args: []ast.ExprNode{
+						binary(opcode.Minus, addedSum(), removedSum()),
+						addedSum(),
+						&ast.UnaryOperationExpr{Op: opcode.Minus, V: removedSum()},
+					},
+				},
 				AsName: ast.NewCIStr(ac.deltaName),
 			})
 		case AggMax:
