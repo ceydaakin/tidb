@@ -34,7 +34,7 @@ import (
 )
 
 // BuildAndValidateMViewScheduleExpr restores an AST expression into canonical SQL and
-// validates that its expression type is DATE/DATETIME/TIMESTAMP.
+// validates that its expression type is DATE/DATETIME/TIMESTAMP and that it is not a constant NULL.
 func BuildAndValidateMViewScheduleExpr(sctx sessionctx.Context, expr ast.ExprNode, clause string) (string, error) {
 	exprSQL, err := restoreNodeToCanonicalSQL(expr)
 	if err != nil {
@@ -55,6 +55,14 @@ func BuildAndValidateMViewScheduleExpr(sctx sessionctx.Context, expr ast.ExprNod
 	if tp != mysql.TypeDate && tp != mysql.TypeDatetime && tp != mysql.TypeTimestamp {
 		return "", dbterror.ErrGeneralUnsupportedDDL.GenWithStack(
 			fmt.Sprintf("%s expression must return DATE/DATETIME/TIMESTAMP, but got %s", clause, types.TypeStr(tp)),
+		)
+	}
+	// An expression folded to a constant NULL can never produce a schedule time, so the
+	// automatic refresh/purge would be silently disabled. Expressions that only evaluate
+	// to NULL at runtime are still accepted and handled when the schedule is derived.
+	if c, ok := builtExpr.(*expression.Constant); ok && c.DeferredExpr == nil && c.ParamMarker == nil && c.Value.IsNull() {
+		return "", dbterror.ErrGeneralUnsupportedDDL.GenWithStack(
+			fmt.Sprintf("%s expression must not evaluate to NULL", clause),
 		)
 	}
 	return exprSQL, nil

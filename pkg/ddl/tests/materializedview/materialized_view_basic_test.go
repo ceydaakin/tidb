@@ -163,6 +163,11 @@ func TestCreateMaterializedViewRefreshExprTypeValidation(t *testing.T) {
 	require.ErrorContains(t, err, "REFRESH NEXT expression must return DATE/DATETIME/TIMESTAMP")
 	err = tk.ExecToErr("create materialized view mv_bad_start (a, s, cnt) refresh fast start with 1 next date_add(now(), interval 1 hour) as select a, sum(b), count(1) from t group by a")
 	require.ErrorContains(t, err, "REFRESH START WITH expression must return DATE/DATETIME/TIMESTAMP")
+	// A schedule expression that is always NULL would silently disable automatic refresh (#72623).
+	err = tk.ExecToErr("create materialized view mv_null_next (a, s, cnt) refresh fast next cast(null as datetime) as select a, sum(b), count(1) from t group by a")
+	require.ErrorContains(t, err, "REFRESH NEXT expression must not evaluate to NULL")
+	err = tk.ExecToErr("create materialized view mv_null_start (a, s, cnt) refresh fast start with cast(null as datetime) next date_add(now(), interval 1 hour) as select a, sum(b), count(1) from t group by a")
+	require.ErrorContains(t, err, "REFRESH START WITH expression must not evaluate to NULL")
 	tk.MustExec("create materialized view mv_date_schedule (a, s, cnt) refresh fast next cast('2030-01-02' as date) as select a, sum(b), count(1) from t group by a")
 	tk.MustExec("create materialized view mv_ok (a, s, cnt) refresh fast start with now() next date_add(now(), interval 1 hour) as select a, sum(b), count(1) from t group by a")
 }
@@ -229,6 +234,9 @@ func TestAlterMaterializedViewRefreshExprTypeValidation(t *testing.T) {
 
 	err = tk.ExecToErr("alter materialized view mv refresh start with 1 next date_add(now(), interval 1 hour)")
 	require.ErrorContains(t, err, "REFRESH START WITH expression must return DATE/DATETIME/TIMESTAMP")
+
+	err = tk.ExecToErr("alter materialized view mv refresh next cast(null as datetime)")
+	require.ErrorContains(t, err, "REFRESH NEXT expression must not evaluate to NULL")
 
 	tk.MustExec("alter materialized view mv refresh next cast('2030-01-02' as date)")
 	tk.MustExec("alter materialized view mv refresh start with now() next date_add(now(), interval 1 hour)")
