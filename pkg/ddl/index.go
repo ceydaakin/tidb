@@ -871,6 +871,17 @@ func checkAndBuildIndexInfo(
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	// The condition in the index option is not marshaled, so we need to set it here.
+	// It must be set before checkInvisibleIndexOnPK below: a partial unique index is
+	// never an implicit primary key.
+	if len(args.ConditionString) > 0 {
+		indexInfo.ConditionExprString = args.ConditionString
+		// As we've updated the `ConditionExprString`, we need to rebuild the AffectColumn.
+		indexInfo.AffectColumn, err = buildAffectColumn(indexInfo, tblInfo)
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
+	}
 	if isPK {
 		if _, err = CheckPKOnGeneratedColumn(tblInfo, args.IndexPartSpecifications); err != nil {
 			return nil, err
@@ -1207,16 +1218,6 @@ func (w *worker) onCreateIndex(jobCtx *jobContext, job *model.Job, isPK bool) (v
 		if err != nil {
 			job.State = model.JobStateCancelled
 			return ver, errors.Trace(err)
-		}
-		// The condition in the index option is not marshaled, so we need to set it here.
-		if len(arg.ConditionString) > 0 {
-			indexInfo.ConditionExprString = arg.ConditionString
-			// As we've updated the `ConditionExprString`, we need to rebuild the AffectColumn.
-			indexInfo.AffectColumn, err = buildAffectColumn(indexInfo, tblInfo)
-			if err != nil {
-				job.State = model.JobStateCancelled
-				return ver, errors.Trace(err)
-			}
 		}
 		allIndexInfos = append(allIndexInfos, indexInfo)
 	}

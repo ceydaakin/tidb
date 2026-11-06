@@ -24,7 +24,7 @@ Add index is a “normal” DDL action in terms of SQL surface, but the job args
 - Global index validation: `pkg/ddl/executor.go:checkCreateGlobalIndex`
 - Partial index predicate:
   - Build: `pkg/ddl/executor.go:CheckAndBuildIndexConditionString`
-  - Apply: `pkg/ddl/index.go:onCreateIndex` (restores `ConditionExprString` on the built `IndexInfo`)
+  - Apply: `pkg/ddl/index.go:checkAndBuildIndexInfo` (restores `ConditionExprString` on the built `IndexInfo` before `checkInvisibleIndexOnPK`, so a partial unique index is never treated as an implicit primary key)
 - Expression / generated-key indexes may introduce hidden columns:
   - Build: `pkg/ddl/executor.go:checkIndexNameAndColumns`
   - Publish: `pkg/ddl/index.go:moveAndUpdateHiddenColumnsToPublic` (done when moving `StateNone` → `StateDeleteOnly`)

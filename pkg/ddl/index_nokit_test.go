@@ -29,7 +29,10 @@ import (
 	"github.com/pingcap/tidb/pkg/dxf/framework/storage"
 	"github.com/pingcap/tidb/pkg/ingestor/errdef"
 	"github.com/pingcap/tidb/pkg/meta/model"
+	"github.com/pingcap/tidb/pkg/parser/ast"
+	"github.com/pingcap/tidb/pkg/parser/mysql"
 	"github.com/pingcap/tidb/pkg/sessionctx/vardef"
+	"github.com/pingcap/tidb/pkg/types"
 	"github.com/pingcap/tidb/pkg/util/dbterror"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -426,4 +429,36 @@ func TestModifyTaskParamLoop(t *testing.T) {
 			e.jobID, e.taskID, 1, 2, 3)
 		require.True(t, e.ctrl.Satisfied())
 	})
+}
+
+func TestCheckAndBuildIndexInfoInvisiblePartialUniqueIndex(t *testing.T) {
+	newTableInfo := func() *model.TableInfo {
+		col := &model.ColumnInfo{ID: 1, Name: ast.NewCIStr("a"), Offset: 0, State: model.StatePublic, FieldType: *types.NewFieldType(mysql.TypeLong)}
+		col.AddFlag(mysql.NotNullFlag)
+		return &model.TableInfo{ID: 100, Name: ast.NewCIStr("t"), Columns: []*model.ColumnInfo{col}, MaxIndexID: 0}
+	}
+	newArg := func(name, condition string) *model.IndexArg {
+		return &model.IndexArg{
+			Unique:                  true,
+			IndexName:               ast.NewCIStr(name),
+			IndexPartSpecifications: []*ast.IndexPartSpecification{{Column: &ast.ColumnName{Name: ast.NewCIStr("a")}, Length: types.UnspecifiedLength}},
+			IndexOption:             &ast.IndexOption{Visibility: ast.IndexVisibilityInvisible},
+			ConditionString:         condition,
+		}
+	}
+	job := &model.Job{ID: 1, Type: model.ActionAddIndex}
+
+	// A partial unique index on a NOT NULL column is not an implicit primary key,
+	// so it may be invisible (#72697).
+	tblInfo := newTableInfo()
+	idx, err := checkAndBuildIndexInfo(job, tblInfo, model.ColumnarIndexTypeNA, false, newArg("uk", "`a` > 0"))
+	require.NoError(t, err)
+	require.True(t, idx.Invisible)
+	require.Equal(t, "`a` > 0", idx.ConditionExprString)
+	require.Len(t, idx.AffectColumn, 1)
+	require.Equal(t, "a", idx.AffectColumn[0].Name.L)
+
+	// A full unique index on a NOT NULL column is still an implicit primary key.
+	_, err = checkAndBuildIndexInfo(job, newTableInfo(), model.ColumnarIndexTypeNA, false, newArg("uk", ""))
+	require.ErrorIs(t, err, dbterror.ErrPKIndexCantBeInvisible)
 }
