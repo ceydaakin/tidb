@@ -4296,6 +4296,36 @@ select * from t for update nowait;
 i
 1
 rollback;
+drop table if exists t, t1;
+create table t (a int primary key);
+create table t1 (a int primary key);
+insert t values (1), (2);
+insert t1 values (1), (2);
+begin pessimistic;
+select t.a from t join (select a from t1 where a > 0 for update) d on t.a = d.a where t.a > 0 order by t.a for update of t;
+a
+1
+2
+begin pessimistic;
+select a from t where a = 1 for update nowait;
+Error 3572 (HY000): Statement aborted because lock(s) could not be acquired immediately and NOWAIT is set.
+select a from t1 where a = 1 for update nowait;
+Error 3572 (HY000): Statement aborted because lock(s) could not be acquired immediately and NOWAIT is set.
+rollback;
+rollback;
+begin pessimistic;
+select t.a from t join (select a from t1 where a > 0) d on t.a = d.a where t.a > 0 order by t.a for update of t;
+a
+1
+2
+begin pessimistic;
+select a from t where a = 1 for update nowait;
+Error 3572 (HY000): Statement aborted because lock(s) could not be acquired immediately and NOWAIT is set.
+select a from t1 where a = 1 for update nowait;
+a
+1
+rollback;
+rollback;
 set session tidb_txn_mode='';
 drop table if exists t;
 create table t(a int);

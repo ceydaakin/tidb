@@ -302,7 +302,9 @@ func (e *SelectLockExec) Next(ctx context.Context, req *chunk.Chunk) error {
 	if err != nil {
 		return err
 	}
-	return doLockKeys(ctx, e.Ctx(), lockCtx, e.keys...)
+	// The planner already limited tblID2Handle to this lock's OF targets, so skip the statement-wide
+	// LockTableIDs filter: it comes from the outer OF and would drop a nested block's own locks (#72698).
+	return lockKeysForTargets(ctx, e.Ctx(), lockCtx, e.keys...)
 }
 
 // getMaxExecutionDeadline derives the deadline from ProcessInfo's effective timeout.
@@ -391,6 +393,13 @@ func newLockCtx(sctx sessionctx.Context, lockWaitTime int64, numKeys int, inShar
 // waitTime means the lock operation will wait in milliseconds if target key is already
 // locked by others. used for (select for update nowait) situation
 func doLockKeys(ctx context.Context, se sessionctx.Context, lockCtx *tikvstore.LockCtx, keys ...kv.Key) error {
+	keys = filterLockTableKeys(se.GetSessionVars().StmtCtx, keys)
+	return lockKeysForTargets(ctx, se, lockCtx, keys...)
+}
+
+// lockKeysForTargets is doLockKeys without the statement-wide LockTableIDs filter, for callers whose
+// keys already belong only to their own lock targets.
+func lockKeysForTargets(ctx context.Context, se sessionctx.Context, lockCtx *tikvstore.LockCtx, keys ...kv.Key) error {
 	sessVars := se.GetSessionVars()
 	sctx := sessVars.StmtCtx
 	if !sctx.InUpdateStmt && !sctx.InDeleteStmt {
@@ -405,7 +414,6 @@ func doLockKeys(ctx context.Context, se sessionctx.Context, lockCtx *tikvstore.L
 	// Skip the temporary table keys.
 	keys = filterTemporaryTableKeys(sessVars, keys)
 
-	keys = filterLockTableKeys(sessVars.StmtCtx, keys)
 	var lockKeyStats *tikvutil.LockKeysDetails
 	ctx = context.WithValue(ctx, tikvutil.LockKeysDetailCtxKey, &lockKeyStats)
 	err = txn.LockKeys(tikvutil.SetSessionID(ctx, se.GetSessionVars().ConnectionID), lockCtx, keys...)

@@ -2586,6 +2586,39 @@ select * from t for update nowait;
 rollback;
 disconnect conn1;
 
+# TestIssue72698: an outer FOR UPDATE OF must not drop the locks of an inner query block's own FOR UPDATE.
+drop table if exists t, t1;
+create table t (a int primary key);
+create table t1 (a int primary key);
+insert t values (1), (2);
+insert t1 values (1), (2);
+begin pessimistic;
+select t.a from t join (select a from t1 where a > 0 for update) d on t.a = d.a where t.a > 0 order by t.a for update of t;
+
+connect (conn1, localhost, root,, executor__executor);
+begin pessimistic;
+--error 3572
+select a from t where a = 1 for update nowait;
+--error 3572
+select a from t1 where a = 1 for update nowait;
+rollback;
+
+connection default;
+rollback;
+begin pessimistic;
+select t.a from t join (select a from t1 where a > 0) d on t.a = d.a where t.a > 0 order by t.a for update of t;
+
+connection conn1;
+begin pessimistic;
+--error 3572
+select a from t where a = 1 for update nowait;
+select a from t1 where a = 1 for update nowait;
+rollback;
+
+connection default;
+rollback;
+disconnect conn1;
+
 # TestForSelectScopeInUnion
 set session tidb_txn_mode='';
 # A union B for update, the "for update" option belongs to union statement, so

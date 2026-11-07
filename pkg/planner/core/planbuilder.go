@@ -1639,11 +1639,38 @@ func (b *PlanBuilder) buildSelectLock(src base.LogicalPlan, lock *ast.SelectLock
 	}
 	selectLock := logicalop.LogicalLock{
 		Lock:               lock,
-		TblID2Handle:       b.handleHelper.tailMap(),
+		TblID2Handle:       b.lockTargetHandles(lock),
 		TblID2PhysTblIDCol: tblID2PhysTblIDCol,
 	}.Init(b.ctx)
 	selectLock.SetChildren(src)
 	return selectLock, nil
+}
+
+// lockTargetHandles returns the handle columns this query block's lock must lock.
+// `FOR UPDATE OF` keeps only the named tables here, per lock, so a nested query block's own
+// locking clause still locks its rows (#72698). A CTE-only OF list keeps locking all tables.
+func (b *PlanBuilder) lockTargetHandles(lock *ast.SelectLockInfo) map[int64][]util.HandleCols {
+	tblID2Handle := b.handleHelper.tailMap()
+	if len(lock.Tables) == 0 {
+		return tblID2Handle
+	}
+	targetIDs := make(map[int64]struct{}, len(lock.Tables))
+	for _, tName := range lock.Tables {
+		// CTE has no *model.HintedTable, we need to skip it.
+		if tNameW := b.resolveCtx.GetTableName(tName); tNameW != nil {
+			targetIDs[tNameW.TableInfo.ID] = struct{}{}
+		}
+	}
+	if len(targetIDs) == 0 {
+		return tblID2Handle
+	}
+	targets := make(map[int64][]util.HandleCols, len(targetIDs))
+	for tblID, cols := range tblID2Handle {
+		if _, ok := targetIDs[tblID]; ok {
+			targets[tblID] = cols
+		}
+	}
+	return targets
 }
 
 func setExtraPhysTblIDColsOnDataSource(p base.LogicalPlan, tblID2PhysTblIDCol map[int64]*expression.Column) {
