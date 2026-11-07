@@ -4836,7 +4836,10 @@ func (e *executor) dropTableObject(
 				}
 			}
 			if fkCheck {
-				objects = orderDropTableObjectsByForeignKey(is, objects)
+				var err error
+				if objects, err = orderDropTableObjectsByForeignKey(is, objects); err != nil {
+					return err
+				}
 			}
 		}
 		switch tableObjectType {
@@ -4982,15 +4985,17 @@ func (e *executor) dropTableObject(
 // orderDropTableObjectsByForeignKey orders children before their referenced
 // parents. Each table is dropped by an independent DDL job, so this prevents a
 // referring child from being renamed between an earlier parent job and its own
-// later job. Cycles retain their input order and are rejected by the owner-side
-// foreign-key check unless foreign_key_checks is disabled.
-func orderDropTableObjectsByForeignKey(is infoschema.InfoSchema, objects []*ast.TableName) []*ast.TableName {
+// later job. A cycle cannot be dropped through independent jobs, so it is
+// rejected here, before any job is submitted, to keep the statement atomic.
+func orderDropTableObjectsByForeignKey(is infoschema.InfoSchema, objects []*ast.TableName) ([]*ast.TableName, error) {
 	objectIndex := make(map[schemaAndTable]int, len(objects))
 	for i, object := range objects {
 		objectIndex[schemaAndTable{schema: object.Schema.L, table: object.Name.L}] = i
 	}
 
 	children := make([][]int, len(objects))
+	// referringFKs[parent] lists the child FKs that keep parent from being dropped first.
+	referringFKs := make([][]referringFK, len(objects))
 	indegree := make([]int, len(objects))
 	edges := make(map[[2]int]struct{})
 	for childIdx, child := range objects {
@@ -5016,6 +5021,7 @@ func orderDropTableObjectsByForeignKey(is infoschema.InfoSchema, objects []*ast.
 			}
 			edges[edge] = struct{}{}
 			children[childIdx] = append(children[childIdx], parentIdx)
+			referringFKs[parentIdx] = append(referringFKs[parentIdx], referringFK{childIdx: childIdx, fkName: fk.Name})
 			indegree[parentIdx]++
 		}
 	}
@@ -5031,12 +5037,20 @@ func orderDropTableObjectsByForeignKey(is infoschema.InfoSchema, objects []*ast.
 			}
 		}
 		if selected < 0 {
-			for i, object := range objects {
-				if !processed[i] {
-					ordered = append(ordered, object)
+			// Every remaining table is still referred by another remaining one.
+			for parentIdx := range objects {
+				if processed[parentIdx] {
+					continue
+				}
+				for _, ref := range referringFKs[parentIdx] {
+					if !processed[ref.childIdx] {
+						return nil, errors.Trace(dbterror.ErrForeignKeyCannotDropParent.GenWithStackByArgs(
+							objects[parentIdx].Name, ref.fkName, objects[ref.childIdx].Name))
+					}
 				}
 			}
-			break
+			// Unreachable: a remaining table with indegree > 0 has a remaining child.
+			return nil, errors.Errorf("unexpected foreign key order for DROP TABLE")
 		}
 		processed[selected] = true
 		ordered = append(ordered, objects[selected])
@@ -5044,7 +5058,12 @@ func orderDropTableObjectsByForeignKey(is infoschema.InfoSchema, objects []*ast.
 			indegree[parentIdx]--
 		}
 	}
-	return ordered
+	return ordered, nil
+}
+
+type referringFK struct {
+	childIdx int
+	fkName   ast.CIStr
 }
 
 func buildDropTableInvolvingSchemaInfo(

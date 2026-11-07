@@ -911,6 +911,12 @@ func TestTruncateOrDropTableWithForeignKeyReferred(t *testing.T) {
 	tk.MustExec("create table cycle_b (id int primary key, pid int, foreign key(pid) references cycle_a(id))")
 	tk.MustExec("alter table cycle_a add foreign key(pid) references cycle_b(id)")
 	require.Error(t, tk.ExecToErr("drop table cycle_a, cycle_b"))
+	// The rejection must happen before any job runs, so an unrelated table
+	// listed first survives too (#72782).
+	tk.MustExec("create table cycle_x (id int primary key)")
+	tk.MustGetErrCode("drop table cycle_x, cycle_a, cycle_b", errno.ErrForeignKeyCannotDropParent)
+	tk.MustQuery("select count(*) from cycle_x").Check(testkit.Rows("0"))
+	tk.MustExec("drop table cycle_x")
 	tk.MustQuery("select count(*) from cycle_a").Check(testkit.Rows("0"))
 	tk.MustQuery("select count(*) from cycle_b").Check(testkit.Rows("0"))
 	tk.MustExec("set @@foreign_key_checks=0")
