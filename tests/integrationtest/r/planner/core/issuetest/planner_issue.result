@@ -1547,3 +1547,28 @@ execute _ldbstmt;
 drop database if exists lock_db1;
 drop database if exists lock_db2;
 deallocate prepare _ldbstmt;
+drop table if exists t72849;
+create table t72849(c0 char(1));
+insert into t72849 values ('-');
+select hex(f0), length(f0), f0 = '-' from (select c0 as f0 from t72849 union all select if(1 = 0, binary '0', c0) from t72849) d;
+hex(f0)	length(f0)	f0 = '-'
+2D	1	1
+2D	1	1
+select count(*) from (select c0 as f0 from t72849 union all select if(1 = 0, binary '0', c0) from t72849) d where f0 = '-';
+count(*)
+2
+select hex(f0), length(f0), f0 = '-' from (select c0 as f0 from t72849 union all select if(c0 = 'x', binary '0', c0) from t72849) d;
+hex(f0)	length(f0)	f0 = '-'
+2D	1	1
+2D	1	1
+select hex(f0), length(f0), f0 = '-' from (select c0 as f0 from t72849 union all select case when 1 = 0 then binary '0' else c0 end from t72849) d;
+hex(f0)	length(f0)	f0 = '-'
+2D	1	1
+2D	1	1
+select hex(f0), length(f0) from (select c0 as f0 from t72849 union select if(1 = 0, binary '0', c0) from t72849) d;
+hex(f0)	length(f0)
+2D	1
+select hex(c0), length(c0), c0 = '-', if(1 = 0, binary '0', c0) = '-' from t72849;
+hex(c0)	length(c0)	c0 = '-'	if(1 = 0, binary '0', c0) = '-'
+2D	1	1	1
+drop table t72849;

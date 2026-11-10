@@ -39,6 +39,20 @@ func init() {
 // FoldConstant does constant folding optimization on an expression excluding deferred ones.
 func FoldConstant(ctx BuildContext, expr Expression) Expression {
 	e, _ := foldConstant(ctx, expr)
+	// A function folded to one of its column arguments (e.g. IF(1=0, x, col)) returns
+	// that column, whose RetType is shared with the plan schema. Copy it before setting
+	// the function's charset/collation, or the other references to the column change type too.
+	// A string result also keeps the function's length, so the folded expression is typed
+	// like the unfolded one (UNION would otherwise pad CHAR values into BINARY(N), #72849).
+	if col, ok := e.(*Column); ok && e != expr {
+		newCol := col.Clone().(*Column)
+		newCol.RetType = col.RetType.Clone()
+		exprTp := expr.GetType(ctx.GetEvalCtx())
+		if exprTp.EvalType() == types.ETString && newCol.RetType.EvalType() == types.ETString {
+			newCol.RetType.SetFlen(exprTp.GetFlen())
+		}
+		e = newCol
+	}
 	// keep the original coercibility, charset, collation and repertoire values after folding
 	e.SetCoercibility(expr.Coercibility())
 
