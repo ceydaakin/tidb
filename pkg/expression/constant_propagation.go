@@ -532,21 +532,28 @@ func (s *propConstSolver) pickNewEQConds(visited []bool) (retMapper map[int]*Con
 			return nil
 		}
 		if updated {
-			colType := col.GetType(s.ctx.GetEvalCtx())
-			conType := con.GetType(s.ctx.GetEvalCtx())
-			castedCon := con
-			if !colType.Equal(conType) {
-				oriWarningCnt := s.ctx.GetEvalCtx().WarningCount()
-				newExpr := BuildCastFunction(s.ctx, con, colType.DeepCopy())
-				s.ctx.GetEvalCtx().TruncateWarnings(oriWarningCnt)
-				if newCon, ok := newExpr.(*Constant); ok {
-					castedCon = newCon
-				}
-			}
-			retMapper[s.getColID(col)] = castedCon
+			retMapper[s.getColID(col)] = s.castConstToColType(col, con)
 		}
 	}
 	return
+}
+
+// castConstToColType casts the constant of `col = con` to the column's type before it replaces `col` in
+// other conditions, e.g. `0.0` becomes `0` for a DECIMAL(10,0) column, so that `cast(col as char)` still
+// sees the column's value rather than the literal (#57247, #72848).
+func (s *basePropConstSolver) castConstToColType(col *Column, con *Constant) *Constant {
+	colType := col.GetType(s.ctx.GetEvalCtx())
+	conType := con.GetType(s.ctx.GetEvalCtx())
+	if colType.Equal(conType) {
+		return con
+	}
+	oriWarningCnt := s.ctx.GetEvalCtx().WarningCount()
+	newExpr := BuildCastFunction(s.ctx, con, colType.DeepCopy())
+	s.ctx.GetEvalCtx().TruncateWarnings(oriWarningCnt)
+	if newCon, ok := newExpr.(*Constant); ok {
+		return newCon
+	}
+	return con
 }
 
 func (s *propConstSolver) solve(keepJoinKey bool, conditions []Expression) []Expression {
@@ -774,7 +781,7 @@ func (s *propOuterJoinConstSolver) pickEQCondsOnOuterCol(retMapper map[int]*Cons
 			return nil
 		}
 		if updated {
-			retMapper[s.getColID(col)] = con
+			retMapper[s.getColID(col)] = s.castConstToColType(col, con)
 		}
 	}
 	return retMapper

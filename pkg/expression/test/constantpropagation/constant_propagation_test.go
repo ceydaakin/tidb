@@ -68,4 +68,14 @@ func TestConstantPropagation(t *testing.T) {
 			`└─TableReader(Probe) root  data:TableFullScan`,
 			`  └─TableFullScan cop[tikv] table:a1 keep order:true, stats:pseudo`))
 	}
+	// Outer join and anti semi join must cast the propagated constant to the column type too (#72848):
+	// substituting `0.0` into `cast(t0.c0 as char)` gives '0.0' instead of '0'.
+	tk.MustExec("create table t72848_0 (c0 decimal(10,0))")
+	tk.MustExec("create table t72848_1 (c0 varchar(10))")
+	tk.MustExec("insert into t72848_0 values (0), (5)")
+	tk.MustExec("insert into t72848_1 values ('0')")
+	tk.MustQuery("select t0.c0, t1.c0 from t72848_0 t0 left join t72848_1 t1 on t0.c0 = 0.0 and t1.c0 = cast(t0.c0 as char) order by t0.c0").
+		Check(testkit.Rows("0 0", "5 <nil>"))
+	tk.MustQuery("select c0 from t72848_0 t0 where not exists (select 1 from t72848_1 t1 where t0.c0 = 0.0 and t1.c0 = cast(t0.c0 as char)) order by c0").
+		Check(testkit.Rows("5"))
 }
