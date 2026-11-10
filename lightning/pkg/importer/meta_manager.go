@@ -178,27 +178,56 @@ func parseMetaStatus(s string) (metaStatus, error) {
 	}
 }
 
+// connWithPessimisticTxn takes a dedicated connection from the pool and
+// switches it to pessimistic transaction mode.
+//
+// A pooled connection may have been closed by the server while it was idle,
+// for example when the import runs longer than wait_timeout. database/sql
+// replaces such a connection transparently for *sql.DB calls, but a *sql.Conn
+// stays bound to it and only reports sql.ErrConnDone from then on, so retrying
+// on the same *sql.Conn can never succeed and a new one has to be taken.
+func connWithPessimisticTxn(ctx context.Context, db *sql.DB, logger log.Logger) (*sql.Conn, *common.SQLWithRetry, error) {
+	// Every failed attempt removes one dead connection from the pool, so after
+	// trying all idle connections the next one is newly created.
+	maxAttempts := db.Stats().Idle + 1
+	var err error
+	for range maxAttempts {
+		var conn *sql.Conn
+		conn, err = db.Conn(ctx)
+		if err != nil {
+			return nil, nil, errors.Trace(err)
+		}
+		exec := &common.SQLWithRetry{
+			DB:     conn,
+			Logger: logger,
+		}
+		err = exec.Exec(ctx, "enable pessimistic transaction", "SET SESSION tidb_txn_mode = 'pessimistic';")
+		if err == nil {
+			return conn, exec, nil
+		}
+		//nolint: errcheck
+		conn.Close()
+		if errors.Cause(err) != sql.ErrConnDone {
+			break
+		}
+		logger.Warn("connection was closed, try another one", log.ShortError(err))
+	}
+	return nil, nil, errors.Annotate(err, "enable pessimistic transaction failed")
+}
+
 func (m *dbTableMetaMgr) AllocTableRowIDs(ctx context.Context, requiredRowIDCnt int64) (*verify.KVChecksum, int64, error) {
-	conn, err := m.session.Conn(ctx)
+	conn, exec, err := connWithPessimisticTxn(ctx, m.session, m.tr.logger)
 	if err != nil {
-		return nil, 0, errors.Trace(err)
+		return nil, 0, err
 	}
 	//nolint: errcheck
 	defer conn.Close()
-	exec := &common.SQLWithRetry{
-		DB:     conn,
-		Logger: m.tr.logger,
-	}
 	// (myStartRowID, myEndRowID] is the range of row_id that current instance
 	// can use to encode the table.
 	var myStartRowID, myEndRowID int64
 	myStatus := metaStatusInitial
 	newStatus := metaStatusRowIDAllocated
 	var baseTotalKvs, baseTotalBytes, baseChecksum uint64
-	err = exec.Exec(ctx, "enable pessimistic transaction", "SET SESSION tidb_txn_mode = 'pessimistic';")
-	if err != nil {
-		return nil, 0, errors.Annotate(err, "enable pessimistic transaction failed")
-	}
 
 	hasAutoID := common.TableHasAutoID(m.tr.tableInfo.Core)
 	tableChecksumingMsg := "Target table is calculating checksum. Please wait until the checksum is finished and try again."
@@ -404,20 +433,12 @@ func (m *dbTableMetaMgr) UpdateTableStatus(ctx context.Context, status metaStatu
 func (m *dbTableMetaMgr) CheckAndUpdateLocalChecksum(ctx context.Context, checksum *verify.KVChecksum, hasLocalDupes bool) (
 	otherHasDupe bool, needRemoteDupe bool, baseTotalChecksum *verify.KVChecksum, err error,
 ) {
-	conn, err := m.session.Conn(ctx)
+	conn, exec, err := connWithPessimisticTxn(ctx, m.session, m.tr.logger)
 	if err != nil {
-		return false, false, nil, errors.Trace(err)
+		return false, false, nil, err
 	}
 	//nolint: errcheck
 	defer conn.Close()
-	exec := &common.SQLWithRetry{
-		DB:     conn,
-		Logger: m.tr.logger,
-	}
-	err = exec.Exec(ctx, "enable pessimistic transaction", "SET SESSION tidb_txn_mode = 'pessimistic';")
-	if err != nil {
-		return false, false, nil, errors.Annotate(err, "enable pessimistic transaction failed")
-	}
 	var (
 		baseTotalKvs, baseTotalBytes, baseChecksum uint64
 		taskKvs, taskBytes, taskChecksum           uint64
@@ -677,20 +698,12 @@ func (m *dbTaskMetaMgr) CheckTaskExist(ctx context.Context) (bool, error) {
 }
 
 func (m *dbTaskMetaMgr) CheckTasksExclusively(ctx context.Context, action func(tasks []taskMeta) ([]taskMeta, error)) error {
-	conn, err := m.session.Conn(ctx)
+	conn, exec, err := connWithPessimisticTxn(ctx, m.session, log.Wrap(logutil.Logger(ctx)))
 	if err != nil {
-		return errors.Trace(err)
+		return err
 	}
 	//nolint: errcheck
 	defer conn.Close()
-	exec := &common.SQLWithRetry{
-		DB:     conn,
-		Logger: log.Wrap(logutil.Logger(ctx)),
-	}
-	err = exec.Exec(ctx, "enable pessimistic transaction", "SET SESSION tidb_txn_mode = 'pessimistic';")
-	if err != nil {
-		return errors.Annotate(err, "enable pessimistic transaction failed")
-	}
 	return exec.Transact(ctx, "check tasks exclusively", func(ctx context.Context, tx *sql.Tx) error {
 		rows, err := tx.QueryContext(
 			ctx,
@@ -747,22 +760,13 @@ func (m *dbTaskMetaMgr) CheckTasksExclusively(ctx context.Context, action func(t
 
 func (m *dbTaskMetaMgr) CheckAndPausePdSchedulers(ctx context.Context) (pdutil.UndoFunc, error) {
 	pauseCtx, cancel := context.WithCancel(ctx)
-	conn, err := m.session.Conn(ctx)
+	conn, exec, err := connWithPessimisticTxn(ctx, m.session, log.Wrap(logutil.Logger(ctx)))
 	if err != nil {
 		cancel()
-		return nil, errors.Trace(err)
+		return nil, err
 	}
 	//nolint: errcheck
 	defer conn.Close()
-	exec := &common.SQLWithRetry{
-		DB:     conn,
-		Logger: log.Wrap(logutil.Logger(ctx)),
-	}
-	err = exec.Exec(ctx, "enable pessimistic transaction", "SET SESSION tidb_txn_mode = 'pessimistic';")
-	if err != nil {
-		cancel()
-		return nil, errors.Annotate(err, "enable pessimistic transaction failed")
-	}
 
 	needSwitch := true
 	paused := false
@@ -888,20 +892,12 @@ func (m *dbTaskMetaMgr) CanPauseSchedulerByKeyRange() bool {
 // Return values: first boolean indicates whether switch back tidb cluster to normal state (restore schedulers, switch tikv to normal)
 // the second boolean indicates whether to clean up the metadata in tidb
 func (m *dbTaskMetaMgr) CheckAndFinishRestore(ctx context.Context, finished bool) (switchBack bool, allFinished bool, err error) {
-	conn, err := m.session.Conn(ctx)
+	conn, exec, err := connWithPessimisticTxn(ctx, m.session, log.Wrap(logutil.Logger(ctx)))
 	if err != nil {
-		return false, false, errors.Trace(err)
+		return false, false, err
 	}
 	//nolint: errcheck
 	defer conn.Close()
-	exec := &common.SQLWithRetry{
-		DB:     conn,
-		Logger: log.Wrap(logutil.Logger(ctx)),
-	}
-	err = exec.Exec(ctx, "enable pessimistic transaction", "SET SESSION tidb_txn_mode = 'pessimistic';")
-	if err != nil {
-		return false, false, errors.Annotate(err, "enable pessimistic transaction failed")
-	}
 
 	switchBack = true
 	allFinished = finished

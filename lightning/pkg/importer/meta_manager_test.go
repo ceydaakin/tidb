@@ -476,3 +476,45 @@ func TestSingleTaskMetaMgr(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+
+func TestCheckAndUpdateLocalChecksumOnStaleConn(t *testing.T) {
+	s := newMetaMgrSuite(t)
+	ctx := context.Background()
+
+	// sqlmock refuses to open connections once all of them were closed, so
+	// keep one in use while the stale one is dropped.
+	busyConn, err := s.mgr.session.Conn(ctx)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, busyConn.Close())
+	}()
+	// Leave one idle connection in the pool.
+	idleConn, err := s.mgr.session.Conn(ctx)
+	require.NoError(t, err)
+	require.NoError(t, idleConn.Close())
+	require.Equal(t, 1, s.mgr.session.Stats().Idle)
+
+	// The pooled connection was closed by the server while it was idle (for
+	// example by wait_timeout), so the first statement on it reports a bad
+	// connection. A new connection must be used instead.
+	s.mockDB.ExpectExec("SET SESSION tidb_txn_mode = 'pessimistic';").
+		WillReturnError(driver.ErrBadConn)
+	s.mockDB.ExpectExec("SET SESSION tidb_txn_mode = 'pessimistic';").
+		WillReturnResult(sqlmock.NewResult(int64(0), int64(0)))
+	s.mockDB.ExpectBegin()
+	s.mockDB.ExpectQuery("\\QSELECT task_id, total_kvs_base, total_bytes_base, checksum_base, total_kvs, total_bytes, checksum, status, has_duplicates from `test`.`table_meta` WHERE table_id = ? FOR UPDATE\\E").
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"task_id", "total_kvs_base", "total_bytes_base", "checksum_base", "total_kvs", "total_bytes", "checksum", "status", "has_duplicates"}).
+			AddRow("1", "0", "0", "0", "0", "0", "0", metaStatusRestoreFinished.String(), false))
+	s.mockDB.ExpectExec("\\QUPDATE `test`.`table_meta` SET total_kvs = ?, total_bytes = ?, checksum = ?, status = ?, has_duplicates = ? WHERE table_id = ? AND task_id = ?\\E").
+		WithArgs(uint64(2), uint64(1), uint64(3), metaStatusChecksuming.String(), false, int64(1), int64(1)).
+		WillReturnResult(sqlmock.NewResult(int64(0), int64(1)))
+	s.mockDB.ExpectCommit()
+
+	checksum := verification.MakeKVChecksum(1, 2, 3)
+	otherHasDupe, needRemoteDupe, baseTotalChecksum, err := s.mgr.CheckAndUpdateLocalChecksum(ctx, &checksum, false)
+	require.NoError(t, err)
+	require.False(t, otherHasDupe)
+	require.True(t, needRemoteDupe)
+	require.NotNil(t, baseTotalChecksum)
+}
