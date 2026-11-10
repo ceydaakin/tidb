@@ -654,6 +654,22 @@ set @@tidb_opt_join_reorder_threshold=5;
 explain format='plan_tree' select 1 from t1,t2,t3,t4 where t1.a=t2.a and t3.b=t4.b;
 set @@tidb_opt_join_reorder_threshold=default;
 
+# TestIssue72850
+drop table if exists t0, t1, t2;
+create table t0(c0 varchar(10) collate utf8mb4_general_ci);
+create table t1(c0 varbinary(10));
+insert into t0 values ('a'), ('A');
+insert into t1 values ('a');
+select count(*) from t1 join t0 on t1.c0 = t0.c0 group by t0.c0;
+select /*+ set_var(tidb_opt_agg_push_down=1) */ count(*) from t1 join t0 on t1.c0 = t0.c0 group by t0.c0;
+select /*+ set_var(tidb_opt_agg_push_down=1) */ count(*) from t1 join t0 on t1.c0 <> t0.c0 group by t0.c0;
+explain format='plan_tree' select /*+ set_var(tidb_opt_agg_push_down=1) */ count(*) from t1 join t0 on t1.c0 = t0.c0 group by t0.c0;
+# The aggregation is still pushed down when the join compares the column with its own collation.
+create table t2(c0 varchar(10) collate utf8mb4_general_ci);
+insert into t2 values ('a');
+select /*+ set_var(tidb_opt_agg_push_down=1) */ count(*) from t2 join t0 on t2.c0 = t0.c0 group by t0.c0;
+explain format='plan_tree' select /*+ set_var(tidb_opt_agg_push_down=1) */ count(*) from t2 join t0 on t2.c0 = t0.c0 group by t0.c0;
+
 # TestLongQueryBindingFromHistory
 # Test that long SQL queries can be used to create bindings from history using plan digest
 # This test verifies the fix for the issue where long queries were truncated in statement summary

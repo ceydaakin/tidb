@@ -27,6 +27,7 @@ import (
 	ruleutil "github.com/pingcap/tidb/pkg/planner/core/rule/util"
 	"github.com/pingcap/tidb/pkg/planner/util"
 	"github.com/pingcap/tidb/pkg/types"
+	"github.com/pingcap/tidb/pkg/util/collate"
 )
 
 // AggregationPushDownSolver is a rule that pushes down aggregation functions to the child of LogicalJoin.
@@ -190,8 +191,42 @@ func (a *AggregationPushDownSolver) splitAggFuncsAndGbyCols(agg *logicalop.Logic
 	if !valid {
 		return
 	}
+	// The pushed-down aggregation groups by the columns of the join conditions with the columns' own collations and
+	// keeps one row per group. If a condition reads a column with another collation, rows of one group can evaluate
+	// the condition differently, so the aggregation can't be pushed down.
+	for _, conds := range [][]expression.Expression{
+		expression.ScalarFuncs2Exprs(join.EqualConditions), expression.ScalarFuncs2Exprs(join.NAEQConditions),
+		join.LeftConditions, join.RightConditions, join.OtherConditions,
+	} {
+		for _, cond := range conds {
+			if usesStringColWithOtherCollation(cond) {
+				valid = false
+				return
+			}
+		}
+	}
 	leftGbyCols, rightGbyCols = a.collectGbyCols(agg, join)
 	return
+}
+
+// usesStringColWithOtherCollation checks whether the expression contains a function which takes a string column as its
+// argument, but uses a collation that is not compatible with the collation of the column.
+func usesStringColWithOtherCollation(expr expression.Expression) bool {
+	sf, ok := expr.(*expression.ScalarFunction)
+	if !ok {
+		return false
+	}
+	_, collation := sf.CharsetAndCollation()
+	for _, arg := range sf.GetArgs() {
+		if col, isCol := arg.(*expression.Column); isCol {
+			if col.RetType.EvalType() == types.ETString && !collate.CompatibleCollate(collation, col.RetType.GetCollate()) {
+				return true
+			}
+		} else if usesStringColWithOtherCollation(arg) {
+			return true
+		}
+	}
+	return false
 }
 
 // addGbyCol adds a column to gbyCols. If a group by column has existed, it will not be added repeatedly.
