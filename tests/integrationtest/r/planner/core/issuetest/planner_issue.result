@@ -1547,3 +1547,18 @@ execute _ldbstmt;
 drop database if exists lock_db1;
 drop database if exists lock_db2;
 deallocate prepare _ldbstmt;
+use test;
+drop table if exists t72928;
+create table t72928(a int, b int);
+insert into t72928 values(17, 1);
+select x, 5280*x as y, x=0.0588 as eq from (select b/(a*b) as x from t72928 group by a, b union all select cast(0 as decimal(10,2)) where false) q;
+x	y	eq
+0.0588	310.4640	1
+select x, 5280*x as y, x=0.0588 as eq from (select b/(a*b) as x from t72928 group by a, b union select cast(0 as decimal(10,2)) where false) q;
+x	y	eq
+0.0588	310.4640	1
+select x, 5280*x as y, x=0.0588 as eq from (select b/(a*b) as x from t72928 union all select cast(0 as decimal(10,2))) q order by x;
+x	y	eq
+0.0000	0.0000	0
+0.0588	310.4640	1
+drop table t72928;

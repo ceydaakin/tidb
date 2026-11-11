@@ -2160,6 +2160,22 @@ func (b *PlanBuilder) setUnionFlen(resultTp *types.FieldType, cols []expression.
 	}
 }
 
+// unionChildMayExceedDecimalScale reports whether the idx-th output column of a union child
+// is a DECIMAL expression whose value may carry more fractional digits than its
+// declared scale (for example `b/(a*b)` keeps extra digits for intermediate
+// precision). UNION materializes its result in the union column type, so such
+// values must be cast even when the types are equal, otherwise UNION ALL returns
+// different arithmetic and comparison results than UNION, which rounds them in
+// firstrow. See https://github.com/pingcap/tidb/issues/72928.
+func unionChildMayExceedDecimalScale(child base.LogicalPlan, idx int) bool {
+	proj, ok := child.(*logicalop.LogicalProjection)
+	if !ok || idx >= len(proj.Exprs) {
+		return false
+	}
+	sf, ok := proj.Exprs[idx].(*expression.ScalarFunction)
+	return ok && sf.RetType.EvalType() == types.ETDecimal
+}
+
 func (b *PlanBuilder) buildProjection4Union(_ context.Context, u *logicalop.LogicalUnionAll) error {
 	unionCols := make([]*expression.Column, 0, u.Children()[0].Schema().Len())
 	names := make([]*types.FieldName, 0, u.Children()[0].Schema().Len())
@@ -2196,7 +2212,7 @@ func (b *PlanBuilder) buildProjection4Union(_ context.Context, u *logicalop.Logi
 		for i, srcCol := range child.Schema().Columns {
 			dstType := unionCols[i].RetType
 			srcType := srcCol.RetType
-			if !srcType.Equal(dstType) {
+			if !srcType.Equal(dstType) || unionChildMayExceedDecimalScale(child, i) {
 				exprs[i] = expression.BuildCastFunction4Union(b.ctx.GetExprCtx(), srcCol, dstType)
 			} else {
 				exprs[i] = srcCol
