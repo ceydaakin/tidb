@@ -383,8 +383,15 @@ func TestHashGroupKey(t *testing.T) {
 		for j := range input.NumRows() {
 			d, err := colExpr.Eval(ctx, input.GetRow(j))
 			require.NoError(t, err)
-			buf, err = codec.EncodeValue(sc.TimeZone(), buf[:0], d)
-			require.NoError(t, err)
+			if eTypes[i] == types.ETDecimal {
+				// Decimal group keys use the precision-independent hash key.
+				flag, hashKey, err := codec.EncodeHashChunkRowIdx(sc.TypeCtx(), input.GetRow(j), ft, 0)
+				require.NoError(t, err)
+				buf = append(append(buf[:0], flag), hashKey...)
+			} else {
+				buf, err = codec.EncodeValue(sc.TimeZone(), buf[:0], d)
+				require.NoError(t, err)
+			}
 			require.Equal(t, string(bufs[j]), string(buf))
 		}
 	}

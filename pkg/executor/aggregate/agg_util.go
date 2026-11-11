@@ -139,13 +139,6 @@ func GetGroupKey(ctx sessionctx.Context, input *chunk.Chunk, groupKey [][]byte, 
 			expression.PutColumn(buf)
 			return nil, err
 		}
-		// This check is used to avoid error during the execution of `EncodeDecimal`.
-		if item.GetType(ctx.GetExprCtx().GetEvalCtx()).GetType() == mysql.TypeNewDecimal {
-			newTp := *tp
-			newTp.SetFlen(0)
-			tp = &newTp
-		}
-
 		groupKey, err = codec.HashGroupKey(ctx.GetSessionVars().StmtCtx.TimeZone(), input.NumRows(), buf, groupKey, tp)
 		err = errCtx.HandleError(err)
 		if err != nil {

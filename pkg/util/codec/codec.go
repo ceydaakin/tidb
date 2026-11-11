@@ -1816,10 +1816,14 @@ func HashGroupKey(loc *time.Location, n int, col *chunk.Column, buf [][]byte, ft
 				buf[i] = append(buf[i], NilFlag)
 			} else {
 				buf[i] = append(buf[i], decimalFlag)
-				buf[i], err = EncodeDecimal(buf[i], &ds[i], ft.GetFlen(), ft.GetDecimal())
+				// Equal decimals can carry different internal fractional digits (e.g. a folded
+				// constant 0.2000 and a division result 0.200000000), so encode the value only.
+				var hashKey []byte
+				hashKey, err = ds[i].ToHashKey()
 				if err != nil {
 					return buf, err
 				}
+				buf[i] = append(buf[i], hashKey...)
 			}
 		}
 	case types.ETDatetime, types.ETTimestamp:

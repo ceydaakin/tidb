@@ -796,3 +796,12 @@ DELETE FROM test_62458 PARTITION (p1) WHERE c1 = 15;
 CREATE TABLE test_62457 (c INT) PARTITION BY RANGE (c) (PARTITION p VALUES LESS THAN (10));
 -- error 3146 
 ALTER TABLE test_62457 ADD COLUMN c2 INT AS (JSON_EXTRACT(c, '$.number')) VIRTUAL;
+
+# TestIssue72931 equal DECIMAL values with different internal scales must be one group
+drop table if exists t_72931;
+create table t_72931(a int, b int);
+insert into t_72931 values(17, 1);
+select 1/5 as x union select b/5 from t_72931;
+select x, count(*) as n from (select 1/5 as x union all select b/5 from t_72931) q group by x;
+select x, count(*) as n from (select 1/5 as x union all select b/5 from t_72931) q group by x having count(*) = 2;
+select count(distinct x) from (select 0.2 as x union all select b/5 from t_72931) q;

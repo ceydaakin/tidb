@@ -976,24 +976,20 @@ func TestHashGroup(t *testing.T) {
 	tps := []*types.FieldType{tp}
 	chk1 := chunk.New(tps, 3, 3)
 	chk1.Reset()
-	chk1.Column(0).AppendMyDecimal(types.NewDecFromStringForTest("-123.123456789"))
-	chk1.Column(0).AppendMyDecimal(types.NewDecFromStringForTest("-123.123456789"))
-	chk1.Column(0).AppendMyDecimal(types.NewDecFromStringForTest("-123.123456789"))
+	// Equal values with different internal fractional digits must share one group key (#72931).
+	chk1.Column(0).AppendMyDecimal(types.NewDecFromStringForTest("0.2000"))
+	chk1.Column(0).AppendMyDecimal(types.NewDecFromStringForTest("0.200000000"))
+	chk1.Column(0).AppendMyDecimal(types.NewDecFromStringForTest("0.2000000001"))
 
-	buf1 := make([][]byte, 3)
-	tp1 := tp
-	tp1.SetFlen(20)
-	tp1.SetDecimal(5)
-	buf, err := HashGroupKey(time.Local, 3, chk1.Column(0), buf1, tp1)
-	require.Error(t, err)
-	require.Len(t, buf, 3)
-
-	tp2 := tp
-	tp2.SetFlen(12)
-	tp2.SetDecimal(10)
-	buf, err = HashGroupKey(time.Local, 3, chk1.Column(0), buf1, tp2)
-	require.Error(t, err)
-	require.Len(t, buf, 3)
+	for _, flen := range []int{0, 15} {
+		tp.SetFlen(flen)
+		tp.SetDecimal(4)
+		buf, err := HashGroupKey(time.Local, 3, chk1.Column(0), make([][]byte, 3), tp)
+		require.NoError(t, err)
+		require.Len(t, buf, 3)
+		require.Equal(t, buf[0], buf[1], "flen %d", flen)
+		require.NotEqual(t, buf[0], buf[2], "flen %d", flen)
+	}
 }
 
 func datumsForTest() ([]types.Datum, []*types.FieldType) {
