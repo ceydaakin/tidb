@@ -2657,7 +2657,7 @@ NULL	NULL
 2	2
 explain format = 'plan_tree' select * from t1 intersect select * from t2;
 id	task	access object	operator info
-HashJoin	root		semi join, left side:HashAgg, equal:[nulleq(executor__executor.t1.a, executor__executor.t2.a)], other cond:nulleq(cast(executor__executor.t1.b, double BINARY), cast(executor__executor.t2.b, double BINARY))
+HashJoin	root		semi join, left side:HashAgg, equal:[nulleq(executor__executor.t1.a, executor__executor.t2.a)], other cond:nulleq(cast(executor__executor.t1.b, varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin), executor__executor.t2.b)
 ├─TableReader(Build)	root		data:TableFullScan
 │ └─TableFullScan	cop[tikv]	table:t2	keep order:false, stats:pseudo
 └─HashAgg(Probe)	root		group by:executor__executor.t1.a, executor__executor.t1.b, funcs:firstrow(executor__executor.t1.a)->executor__executor.t1.a, funcs:firstrow(executor__executor.t1.b)->executor__executor.t1.b
@@ -2696,7 +2696,7 @@ NULL	3
 3	3.0000000000
 explain format = 'plan_tree' select * from t1 union all select * from t2 except select * from t3;
 id	task	access object	operator info
-HashJoin	root		anti semi join, left side:HashAgg, equal:[nulleq(Column, executor__executor.t3.a)], other cond:nulleq(cast(Column, double BINARY), cast(executor__executor.t3.b, double BINARY))
+HashJoin	root		anti semi join, left side:HashAgg, equal:[nulleq(Column, executor__executor.t3.a)], other cond:nulleq(cast(Column, varchar(30) BINARY CHARACTER SET utf8mb4 COLLATE utf8mb4_bin), cast(executor__executor.t3.b, varchar(30) BINARY CHARACTER SET utf8mb4 COLLATE utf8mb4_bin))
 ├─TableReader(Build)	root		data:TableFullScan
 │ └─TableFullScan	cop[tikv]	table:t3	keep order:false, stats:pseudo
 └─HashAgg(Probe)	root		group by:Column, Column, funcs:firstrow(Column)->Column, funcs:firstrow(Column)->Column
@@ -2712,12 +2712,13 @@ NULL	NULL
 NULL	3
 1	1
 2	2
+3	3
 explain format = 'plan_tree' select * from t1 intersect select * from t2 intersect select * from t1;
 id	task	access object	operator info
 HashJoin	root		semi join, left side:HashJoin, equal:[nulleq(executor__executor.t1.a, executor__executor.t1.a) nulleq(executor__executor.t1.b, executor__executor.t1.b)]
 ├─TableReader(Build)	root		data:TableFullScan
 │ └─TableFullScan	cop[tikv]	table:t1	keep order:false, stats:pseudo
-└─HashJoin(Probe)	root		semi join, left side:HashAgg, equal:[nulleq(executor__executor.t1.a, executor__executor.t2.a)], other cond:nulleq(cast(executor__executor.t1.b, double BINARY), cast(executor__executor.t2.b, double BINARY))
+└─HashJoin(Probe)	root		semi join, left side:HashAgg, equal:[nulleq(executor__executor.t1.a, executor__executor.t2.a)], other cond:nulleq(cast(executor__executor.t1.b, varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin), executor__executor.t2.b)
   ├─TableReader(Build)	root		data:TableFullScan
   │ └─TableFullScan	cop[tikv]	table:t2	keep order:false, stats:pseudo
   └─HashAgg(Probe)	root		group by:executor__executor.t1.a, executor__executor.t1.b, funcs:firstrow(executor__executor.t1.a)->executor__executor.t1.a, funcs:firstrow(executor__executor.t1.b)->executor__executor.t1.b
@@ -2735,7 +2736,7 @@ Union	root
 ├─Projection	root		executor__executor.t1.a->Column, cast(executor__executor.t1.b, varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin)->Column
 │ └─TableReader	root		data:TableFullScan
 │   └─TableFullScan	cop[tikv]	table:t1	keep order:false, stats:pseudo
-└─HashJoin	root		semi join, left side:HashAgg, equal:[nulleq(executor__executor.t2.a, executor__executor.t3.a)], other cond:nulleq(cast(executor__executor.t2.b, double BINARY), cast(executor__executor.t3.b, double BINARY))
+└─HashJoin	root		semi join, left side:HashAgg, equal:[nulleq(executor__executor.t2.a, executor__executor.t3.a)], other cond:nulleq(cast(executor__executor.t2.b, varchar(30) BINARY CHARACTER SET utf8mb4 COLLATE utf8mb4_bin), cast(executor__executor.t3.b, varchar(30) BINARY CHARACTER SET utf8mb4 COLLATE utf8mb4_bin))
   ├─TableReader(Build)	root		data:TableFullScan
   │ └─TableFullScan	cop[tikv]	table:t3	keep order:false, stats:pseudo
   └─HashAgg(Probe)	root		group by:executor__executor.t2.a, executor__executor.t2.b, funcs:firstrow(executor__executor.t2.a)->executor__executor.t2.a, funcs:firstrow(executor__executor.t2.b)->executor__executor.t2.b
@@ -2751,8 +2752,8 @@ NULL	NULL
 3	3
 explain format = 'plan_tree' select * from t1 except select * from t2 intersect select * from t3;
 id	task	access object	operator info
-HashJoin	root		anti semi join, left side:HashAgg, equal:[nulleq(executor__executor.t1.a, executor__executor.t2.a)], other cond:nulleq(cast(executor__executor.t1.b, double BINARY), cast(executor__executor.t2.b, double BINARY))
-├─HashJoin(Build)	root		semi join, left side:HashAgg, equal:[nulleq(executor__executor.t2.a, executor__executor.t3.a)], other cond:nulleq(cast(executor__executor.t2.b, double BINARY), cast(executor__executor.t3.b, double BINARY))
+HashJoin	root		anti semi join, left side:HashAgg, equal:[nulleq(executor__executor.t1.a, executor__executor.t2.a)], other cond:nulleq(cast(executor__executor.t1.b, varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin), executor__executor.t2.b)
+├─HashJoin(Build)	root		semi join, left side:HashAgg, equal:[nulleq(executor__executor.t2.a, executor__executor.t3.a)], other cond:nulleq(cast(executor__executor.t2.b, varchar(30) BINARY CHARACTER SET utf8mb4 COLLATE utf8mb4_bin), cast(executor__executor.t3.b, varchar(30) BINARY CHARACTER SET utf8mb4 COLLATE utf8mb4_bin))
 │ ├─TableReader(Build)	root		data:TableFullScan
 │ │ └─TableFullScan	cop[tikv]	table:t3	keep order:false, stats:pseudo
 │ └─HashAgg(Probe)	root		group by:executor__executor.t2.a, executor__executor.t2.b, funcs:firstrow(executor__executor.t2.a)->executor__executor.t2.a, funcs:firstrow(executor__executor.t2.b)->executor__executor.t2.b

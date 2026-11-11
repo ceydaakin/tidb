@@ -953,3 +953,17 @@ execute _ldbstmt;
 drop database if exists lock_db1;
 drop database if exists lock_db2;
 deallocate prepare _ldbstmt;
+
+# TestIssue72932
+use test;
+select 1 as x intersect select '01';
+select 1 as x except select '01';
+select 1 as x union select '01' order by x;
+select cast(1 as char) as x intersect select '01';
+select cast(1 as char) as x except select '01';
+select 1 as x intersect select '1';
+select '01' as x intersect select 1;
+select '01' as x except select 1;
+select 1 as x intersect select 1.0;
+select date'2020-01-01' as x intersect select '2020-1-1';
+select null as x intersect select '01';

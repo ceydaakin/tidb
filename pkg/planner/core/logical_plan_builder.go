@@ -2324,7 +2324,14 @@ func (b *PlanBuilder) buildSemiJoinForSetOperator(
 	copy(joinPlan.OutputNames(), leftPlan.OutputNames())
 	for j := range rightPlan.Schema().Columns {
 		leftCol, rightCol := leftPlan.Schema().Columns[j], rightPlan.Schema().Columns[j]
-		eqCond, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.NullEQ, types.NewFieldType(mysql.TypeTiny), leftCol, rightCol)
+		var leftArg, rightArg expression.Expression = leftCol, rightCol
+		if leftCol.RetType.GetType() != rightCol.RetType.GetType() {
+			leftArg, rightArg, err = b.castSetOprColsToCommonType(leftCol, rightCol)
+			if err != nil {
+				return nil, err
+			}
+		}
+		eqCond, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.NullEQ, types.NewFieldType(mysql.TypeTiny), leftArg, rightArg)
 		if err != nil {
 			return nil, err
 		}
@@ -2337,6 +2344,38 @@ func (b *PlanBuilder) buildSemiJoinForSetOperator(
 		}
 	}
 	return joinPlan, nil
+}
+
+// castSetOprColsToCommonType casts both columns to the type UNION would resolve for them when that
+// type is a string but one column is not, so that INTERSECT and EXCEPT compare values in the set
+// operation's result type, as MySQL does. Comparing the raw columns would use the comparison
+// coercion instead, e.g. 1 and '01' compare as numbers and are equal, while their common type is a
+// string and '1' differs from '01'. Other type mixes compare the same way in both types.
+func (b *PlanBuilder) castSetOprColsToCommonType(leftCol, rightCol *expression.Column) (leftArg, rightArg expression.Expression, err error) {
+	if leftCol.RetType.GetType() == mysql.TypeNull || rightCol.RetType.GetType() == mysql.TypeNull {
+		return leftCol, rightCol, nil
+	}
+	resultTp := unionJoinFieldType(leftCol.RetType, rightCol.RetType)
+	if resultTp.EvalType() != types.ETString ||
+		(leftCol.RetType.EvalType() == types.ETString && rightCol.RetType.EvalType() == types.ETString) {
+		return leftCol, rightCol, nil
+	}
+	exprCtx := b.ctx.GetExprCtx()
+	collation, err := expression.CheckAndDeriveCollationFromExprs(exprCtx, "UNION", resultTp.EvalType(), leftCol, rightCol)
+	if err != nil || collation.Coer == expression.CoercibilityNone {
+		return nil, nil, collate.ErrIllegalMixCollation.GenWithStackByArgs("UNION")
+	}
+	resultTp.SetCharset(collation.Charset)
+	resultTp.SetCollate(collation.Collation)
+	b.setUnionFlen(resultTp, []expression.Expression{leftCol, rightCol})
+	leftArg, rightArg = leftCol, rightCol
+	if !leftCol.RetType.Equal(resultTp) {
+		leftArg = expression.BuildCastFunction4Union(exprCtx, leftCol, resultTp)
+	}
+	if !rightCol.RetType.Equal(resultTp) {
+		rightArg = expression.BuildCastFunction4Union(exprCtx, rightCol, resultTp)
+	}
+	return leftArg, rightArg, nil
 }
 
 // buildIntersect build the set operator for 'intersect'. It is called before buildExcept and buildUnion because of its
