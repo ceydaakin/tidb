@@ -225,6 +225,11 @@ func testCompareMaterializedViewStaleReadOnlyTransaction(t *testing.T) {
 			require.Len(t, tk.MustQuery(compareSQL).Rows(), 1)
 
 			tk.MustGetErrMsg(outputSQL, "only support read-only statement during read-only staleness transactions")
+			// PREPARE/EXECUTE must classify COMPARE the same way as the direct form.
+			tk.MustExec(fmt.Sprintf(`prepare compare_stmt from "%s"`, compareSQL))
+			require.Len(t, tk.MustQuery("execute compare_stmt").Rows(), 1)
+			tk.MustExec(fmt.Sprintf(`prepare compare_output_stmt from "%s"`, outputSQL))
+			tk.MustGetErrMsg("execute compare_output_stmt", "only support read-only statement during read-only staleness transactions")
 			require.True(t, vars.InTxn())
 			require.True(t, vars.TxnCtx.IsStaleness)
 			require.Equal(t, startTS, vars.TxnCtx.StartTS)

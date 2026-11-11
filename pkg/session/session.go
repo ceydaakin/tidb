@@ -2963,6 +2963,15 @@ func (s *session) validateStatementReadOnlyInStaleness(stmtNode ast.StmtNode) er
 	}
 	errMsg := "only support read-only statement during read-only staleness transactions"
 	node := stmtNode.(ast.Node)
+	if execStmt, ok := node.(*ast.ExecuteStmt); ok {
+		// A prepared COMPARE MATERIALIZED VIEW must be classified like the direct statement.
+		preparedStmt, err := plannercore.GetPreparedStmt(execStmt, vars)
+		if err == nil && preparedStmt != nil && preparedStmt.PreparedAst != nil {
+			if compareStmt, ok := preparedStmt.PreparedAst.Stmt.(*ast.CompareMaterializedViewStmt); ok {
+				node = compareStmt
+			}
+		}
+	}
 	switch v := node.(type) {
 	case *ast.SplitRegionStmt:
 		return nil

@@ -46,6 +46,13 @@ compare result
 There are no differences result in 0 rows compared to source base tables at timestamp '<timestamp>' (TSO: <tso>)
 compare materialized view mv_compare as of timestamp @stale_ts output into table mv_compare_stale_output;
 Error 1105 (HY000): only support read-only statement during read-only staleness transactions
+prepare compare_stmt from 'compare materialized view mv_compare as of timestamp @stale_ts';
+execute compare_stmt;
+compare result
+There are no differences result in 0 rows compared to source base tables at timestamp '<timestamp>' (TSO: <tso>)
+prepare compare_output_stmt from 'compare materialized view mv_compare as of timestamp @stale_ts output into table mv_compare_stale_output';
+execute compare_output_stmt;
+Error 1105 (HY000): only support read-only statement during read-only staleness transactions
 select @@tidb_current_ts = @transaction_ts as same_transaction;
 same_transaction
 1

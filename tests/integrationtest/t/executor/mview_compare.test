@@ -43,6 +43,13 @@ connection default;
 compare materialized view mv_compare as of timestamp @stale_ts;
 --error 1105
 compare materialized view mv_compare as of timestamp @stale_ts output into table mv_compare_stale_output;
+# PREPARE/EXECUTE must be classified like the direct statements.
+prepare compare_stmt from 'compare materialized view mv_compare as of timestamp @stale_ts';
+--replace_regex /timestamp '[^']*'/timestamp '<timestamp>'/ /TSO: [0-9]+/TSO: <tso>/
+execute compare_stmt;
+prepare compare_output_stmt from 'compare materialized view mv_compare as of timestamp @stale_ts output into table mv_compare_stale_output';
+--error 1105
+execute compare_output_stmt;
 select @@tidb_current_ts = @transaction_ts as same_transaction;
 select id from t_compare_snapshot order by id;
 connection compare_observer;
