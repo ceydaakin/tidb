@@ -2778,6 +2778,9 @@ func (a *havingWindowAndOrderbyExprResolver) Enter(n ast.Node) (node ast.Node, s
 		a.inWindowSpec = true
 	case *driver.ParamMarkerExpr, *ast.ColumnNameExpr, *ast.ColumnName:
 	case *ast.SubqueryExpr, *ast.ExistsSubqueryExpr:
+		if a.curClause == havingClause {
+			a.appendHavingSubqueryOuterCols(n)
+		}
 		// Enter a new context, skip it.
 		// For example: select sum(c) + c + exists(select c from t) from t;
 		return n, true
@@ -2791,6 +2794,78 @@ func (a *havingWindowAndOrderbyExprResolver) Enter(n ast.Node) (node ast.Node, s
 		a.inExpr = true
 	}
 	return n, false
+}
+
+// qualifiedColNameCollector collects the qualified column names of a subquery.
+type qualifiedColNameCollector struct {
+	cols []*ast.ColumnName
+}
+
+func (c *qualifiedColNameCollector) Enter(n ast.Node) (ast.Node, bool) {
+	if v, ok := n.(*ast.ColumnNameExpr); ok && v.Name.Table.L != "" {
+		c.cols = append(c.cols, v.Name)
+	}
+	return n, false
+}
+
+func (*qualifiedColNameCollector) Leave(n ast.Node) (ast.Node, bool) {
+	return n, true
+}
+
+// appendHavingSubqueryOuterCols makes the grouped or selected columns that a
+// HAVING subquery references by qualified name visible to it. HAVING is built
+// on top of the projection, so a column that is aliased (`select t.a k ... having
+// exists(... t.a)`) or only grouped (`select count(*) ... group by t.a having
+// exists(... t.a)`) is otherwise missing from the subquery's outer scope (#72938).
+// Only columns that are grouped or already selected are added, so the hidden
+// fields never change the ONLY_FULL_GROUP_BY outcome.
+func (a *havingWindowAndOrderbyExprResolver) appendHavingSubqueryOuterCols(subq ast.Node) {
+	collector := &qualifiedColNameCollector{}
+	subq.Accept(collector)
+	names := a.p.OutputNames()
+	idxOf := func(name *ast.ColumnName) int {
+		idx, err := expression.FindFieldName(names, name)
+		if err != nil {
+			return -1
+		}
+		return idx
+	}
+	for _, name := range collector.cols {
+		idx := idxOf(name)
+		if idx < 0 || a.p.Schema().Columns[idx].IsHidden {
+			continue
+		}
+		grouped, exposed := false, false
+		for _, item := range a.gbyItems {
+			if c, ok := item.Expr.(*ast.ColumnNameExpr); ok && idxOf(c.Name) == idx {
+				grouped = true
+				break
+			}
+		}
+		for _, field := range a.selectFields {
+			c, ok := field.Expr.(*ast.ColumnNameExpr)
+			if !ok || idxOf(c.Name) != idx {
+				continue
+			}
+			if field.AsName.L == "" {
+				// The projection already outputs this column under its own name.
+				exposed = true
+				break
+			}
+			if !field.Auxiliary {
+				grouped = true
+			}
+		}
+		if exposed || !grouped {
+			continue
+		}
+		sf := &ast.SelectField{
+			Expr:      &ast.ColumnNameExpr{Name: name},
+			Auxiliary: true,
+		}
+		sf.Expr.SetType(a.p.Schema().Columns[idx].GetStaticType())
+		a.selectFields = append(a.selectFields, sf)
+	}
 }
 
 func (a *havingWindowAndOrderbyExprResolver) resolveFromPlan(v *ast.ColumnNameExpr, p base.LogicalPlan, resolveFieldsFirst bool) (int, error) {

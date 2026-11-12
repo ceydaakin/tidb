@@ -1547,3 +1547,27 @@ execute _ldbstmt;
 drop database if exists lock_db1;
 drop database if exists lock_db2;
 deallocate prepare _ldbstmt;
+drop table if exists t72938_a, t72938_b, t72938_c;
+create table t72938_a(a int, b int);
+create table t72938_b(a int, b int);
+create table t72938_c(a int, b int);
+insert into t72938_a values (1, 2), (3, 4);
+insert into t72938_b values (1, 2);
+insert into t72938_c values (1, 2);
+select d.a k, count(d.a) n from (select a from t72938_a union all select a from t72938_b) d group by d.a having exists(select 1 from t72938_c x where x.a = d.a);
+k	n
+1	2
+select d.a k from t72938_a d group by d.a having exists(select 1 from t72938_c x where x.a = d.a) order by k;
+k
+1
+select count(*) n from t72938_a d group by d.a having exists(select 1 from t72938_c x where x.a = d.a);
+n
+1
+select a k from t72938_a d group by a having d.a in (select x.a from t72938_c x where x.b = d.a + 1);
+k
+1
+select d.a k from t72938_a d group by d.a having not exists(select 1 from t72938_c x where x.a = d.a);
+k
+3
+select d.a k from t72938_a d group by d.a having exists(select 1 from t72938_c x where x.b = d.b);
+Error 1054 (42S22): Unknown column 'd.b' in 'having clause'
