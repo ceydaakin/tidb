@@ -374,6 +374,28 @@ func TestAddIndexForGeneratedColumn(t *testing.T) {
 	tk.MustQuery("select * from gcai_table").Check(testkit.Rows("1 9999-12-31 9999-11-30 6"))
 	tk.MustQuery("select id1 from gcai_table use index(idx1)").Check(testkit.Rows("6"))
 	tk.MustExec("admin check table gcai_table")
+
+	// Fix issue 72943: a NOT NULL virtual column that evaluates to NULL must not
+	// put NULL into the index. Strict mode rejects it, non-strict mode stores 0.
+	for _, fastReorg := range []string{"ON", "OFF"} {
+		tk.MustExec("set global tidb_enable_dist_task = " + fastReorg)
+		tk.MustExec("set global tidb_ddl_enable_fast_reorg = " + fastReorg)
+		tk.MustExec("set @@sql_mode = default")
+		tk.MustExec("drop table if exists t72943")
+		tk.MustExec("create table t72943 (a int, d int not null)")
+		tk.MustExec("insert into t72943 values (null, 1), (null, 1), (1, 1)")
+		tk.MustExec("alter table t72943 add column c int as (a) virtual not null")
+		tk.MustGetErrCode("alter table t72943 add unique key k(c, d)", errno.ErrBadNull)
+		tk.MustGetErrCode("alter table t72943 add key k2(c)", errno.ErrBadNull)
+		tk.MustExec("set @@sql_mode = ''")
+		tk.MustExec("alter table t72943 add key k2(c)")
+		tk.MustQuery("select c from t72943 use index(k2) order by c").Check(testkit.Rows("0", "0", "1"))
+		tk.MustQuery("select count(*) from t72943 use index(k2) where c = 0").Check(testkit.Rows("2"))
+		tk.MustExec("admin check table t72943")
+	}
+	tk.MustExec("set global tidb_ddl_enable_fast_reorg = default")
+	tk.MustExec("set global tidb_enable_dist_task = default")
+	tk.MustExec("set @@sql_mode = default")
 }
 
 func TestAnalyzeStuck(t *testing.T) {

@@ -2641,6 +2641,14 @@ func (w *baseIndexWorker) getIndexRecord(idxInfo *model.IndexInfo, handle kv.Han
 		col := cols[v.Offset]
 		idxColumnVal, ok := w.rowMap[col.ID]
 		if ok {
+			if col.IsVirtualGenerated() {
+				// A NOT NULL virtual column can evaluate to NULL for rows written
+				// before it was added. Reads turn that NULL into the zero value, so
+				// the index must not store NULL: fail in strict mode, else store zero.
+				if err = col.HandleBadNull(w.exprCtx.GetEvalCtx().ErrCtx(), &idxColumnVal, 0); err != nil {
+					return nil, errors.Trace(err)
+				}
+			}
 			idxVal[j] = idxColumnVal
 			continue
 		}
