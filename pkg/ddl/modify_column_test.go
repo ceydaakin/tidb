@@ -411,6 +411,44 @@ func TestModifyColumnCharset(t *testing.T) {
 			"  `a` varchar(8) DEFAULT NULL,\n" +
 			"  `b` varchar(8) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL\n" +
 			") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin"))
+
+	// CHAR/BINARY -> VARCHAR/VARBINARY with another charset must convert and check
+	// the values even without an index on the column, see issue #73028.
+	tk.MustExec("create table t_bin(id int primary key, c binary(2))")
+	tk.MustExec("insert into t_bin values (1, x'FFFE'), (2, 'ok')")
+	tk.MustGetErrCode("alter table t_bin modify column c varchar(10) character set utf8mb4 collate utf8mb4_general_ci", mysql.ErrTruncatedWrongValueForField)
+	tk.MustQuery("select id, hex(c) from t_bin order by id").Check(testkit.Rows("1 FFFE", "2 6F6B"))
+	tk.MustExec("delete from t_bin where id = 1")
+	tk.MustExec("alter table t_bin modify column c varchar(10) character set utf8mb4 collate utf8mb4_general_ci")
+	tk.MustQuery("select id, hex(c), charset(c) from t_bin").Check(testkit.Rows("2 6F6B utf8mb4"))
+
+	tk.MustExec("create table t_mb3(id int primary key, c char(4) charset utf8mb4)")
+	tk.MustExec("insert into t_mb3 values (1, '😀')")
+	tk.MustGetErrCode("alter table t_mb3 modify column c varchar(10) charset utf8", mysql.ErrTruncatedWrongValueForField)
+
+	tk.MustExec("create table t_ascii(id int primary key, c char(4) charset utf8mb4)")
+	tk.MustExec("insert into t_ascii values (1, 'é')")
+	tk.MustGetErrCode("alter table t_ascii modify column c varchar(10) charset ascii", mysql.ErrTruncatedWrongValueForField)
+
+	tk.MustExec("create table t_varbin(id int primary key, c char(4) charset utf8mb4)")
+	tk.MustExec("insert into t_varbin values (1, 'éééé')")
+	tk.MustGetErrCode("alter table t_varbin modify column c varbinary(4)", mysql.WarnDataTruncated)
+	// Same error as the reorg of an indexed column.
+	tk.MustExec("create table t_varbin_idx(id int primary key, c char(4) charset utf8mb4, key(c))")
+	tk.MustExec("insert into t_varbin_idx values (1, 'éééé')")
+	tk.MustGetErrCode("alter table t_varbin_idx modify column c varbinary(4)", mysql.WarnDataTruncated)
+
+	// Non-strict mode converts the values with warnings, like the reorg path for indexed columns.
+	tk.MustExec("set @@sql_mode = ''")
+	tk.MustExec("alter table t_varbin modify column c varbinary(4)")
+	tk.MustQuery("select hex(c) from t_varbin").Check(testkit.Rows("C3A9C3A9"))
+	tk.MustExec("set @@sql_mode = default")
+
+	// A charset change that keeps every value valid (utf8 -> utf8mb4) still succeeds.
+	tk.MustExec("create table t_mb4(id int primary key, c char(4) charset utf8)")
+	tk.MustExec("insert into t_mb4 values (1, 'é')")
+	tk.MustExec("alter table t_mb4 modify column c varchar(10) charset utf8mb4")
+	tk.MustQuery("select hex(c), charset(c) from t_mb4").Check(testkit.Rows("C3A9 utf8mb4"))
 }
 
 func TestModifyColumnTime(t *testing.T) {

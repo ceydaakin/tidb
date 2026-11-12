@@ -1177,8 +1177,21 @@ func needRowReorg(oldCol, changingCol *model.ColumnInfo) bool {
 		return true
 	}
 
-	// We have checked charset before, only need to check binary string, which needs padding.
+	if needConvertCharset(oldCol, changingCol) {
+		return true
+	}
+
+	// Only need to check binary string, which needs padding.
 	return types.IsBinaryStr(&oldCol.FieldType) || types.IsBinaryStr(&changingCol.FieldType)
+}
+
+// needConvertCharset reports whether the values must be converted and checked to change the charset.
+// checkModifyTypes accepts a charset change it can't do in place (e.g. binary -> utf8mb4, utf8mb4 -> utf8)
+// only when the type change needs a reorg. Skipping the row reorg would keep bytes that are
+// invalid in the new charset, see issue #73028.
+func needConvertCharset(oldCol, newCol *model.ColumnInfo) bool {
+	return oldCol.GetCharset() != newCol.GetCharset() &&
+		checkModifyCharsetAndCollation(newCol.GetCharset(), newCol.GetCollate(), oldCol.GetCharset(), oldCol.GetCollate(), false) != nil
 }
 
 // checkModifyColumnData checks the values of the old column data
@@ -2587,6 +2600,9 @@ func noReorgDataStrict(tblInfo *model.TableInfo, oldCol, newCol *model.ColumnInf
 
 	oldTp := oldCol.GetType()
 	newTp := newCol.GetType()
+	if needConvertCharset(oldCol, newCol) {
+		return false
+	}
 	// VARCHAR->CHAR, may need reorg.
 	if types.IsTypeVarchar(oldTp) && newTp == mysql.TypeString {
 		return false

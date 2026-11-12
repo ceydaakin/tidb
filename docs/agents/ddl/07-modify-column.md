@@ -44,6 +44,7 @@ High-level rules (read `getModifyColumnType` for the exact gates):
   - Partitioned tables / TiFlash replica → force `ModifyTypeReorg` (see the `FIXME` gate in `getModifyColumnType`)
   - Non-strict SQL mode → `ModifyTypeReorg`
   - If row rewrite is required → `ModifyTypeReorg` (`needRowReorg`)
+    - A charset change that `checkModifyCharsetAndCollation` rejects in place (e.g. `BINARY` → `VARCHAR ... utf8mb4`, accepted only because `CHAR` → `VARCHAR` needs reorg) makes both `noReorgDataStrict` false and `needRowReorg` true (`needConvertCharset`), so the values are converted and checked (issue #73028).
   - Else:
     - No related indexes or index rewrite not needed → `ModifyTypeNoReorgWithCheck`
     - Index rewrite needed → `ModifyTypeIndexReorg` (`needIndexReorg`)
