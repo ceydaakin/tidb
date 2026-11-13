@@ -667,11 +667,15 @@ func (r *builder) buildFromIn(
 			}
 		}
 		if ft.GetType() == mysql.TypeYear {
-			dt, err = dt.ConvertToMysqlYear(tc, ft)
-			if err != nil {
+			// builtinInIntSig compares the YEAR column with each constant's plain integer value; unlike `col = const`
+			// (see compareFunctionClass.refineArgs), there is no two-digit year adjustment, so `y IN (24, 25)` never
+			// matches 2024. Build the points from the same integer value, see https://github.com/pingcap/tidb/issues/73029.
+			y, _, evalErr := v.EvalInt(evalCtx, chunk.Row{})
+			if evalErr != nil || (y != 0 && (y < int64(types.MinYear) || y > int64(types.MaxYear))) {
 				// in (..., an impossible value (not valid year), ...), the range is empty, so skip it.
 				continue
 			}
+			dt.SetInt64(y)
 		}
 		if ft.EvalType() == types.ETString && (dt.Kind() == types.KindString || dt.Kind() == types.KindBinaryLiteral) {
 			dt.SetString(dt.GetString(), ft.GetCollate()) // refine the string like what we did in builder.buildFromBinOp

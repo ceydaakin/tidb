@@ -953,3 +953,24 @@ execute _ldbstmt;
 drop database if exists lock_db1;
 drop database if exists lock_db2;
 deallocate prepare _ldbstmt;
+
+# TestIssue73029
+use planner__core__issuetest__planner_issue;
+drop table if exists t73029, ty73029;
+create table t73029 (id int primary key, y year, key iy (y));
+insert into t73029 values (1, 2069), (2, 2024), (3, 1999), (4, 0);
+explain format = 'brief' select id from t73029 use index (iy) where y in (24, 25);
+select id from t73029 use index (iy) where y in (24, 25) order by id;
+select id from t73029 ignore index (iy) where y in (24, 25) order by id;
+select id from t73029 use index (iy) where y in (69, 0) order by id;
+select id from t73029 ignore index (iy) where y in (69, 0) order by id;
+select id from t73029 use index (iy) where y in ('24', 2024, '1999', 3000) order by id;
+select id from t73029 ignore index (iy) where y in ('24', 2024, '1999', 3000) order by id;
+select id from t73029 use index (iy) where y in (24) order by id;
+select id from t73029 use index (iy) where y not in (24, 69) order by id;
+select id from t73029 ignore index (iy) where y not in (24, 69) order by id;
+create table ty73029 (k year, v int, primary key (k) nonclustered);
+insert into ty73029 values (2024, 1), (2000, 2), (2069, 3), (1999, 4);
+select k from ty73029 where k in (24, 2000) order by k;
+select k from ty73029 ignore index (`primary`) where k in (24, 2000) order by k;
+drop table t73029, ty73029;

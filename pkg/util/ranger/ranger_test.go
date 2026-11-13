@@ -919,21 +919,21 @@ func TestIndexRangeForYear(t *testing.T) {
 			exprStr:     `a not in (0, 1, 2)`,
 			accessConds: "[not(in(test.t.a, 0, 1, 2))]",
 			filterConds: "[]",
-			resultStr:   `[(NULL,0) (0,2001) (2002,+inf]]`,
+			resultStr:   `[(NULL,0) (0,+inf]]`,
 		},
 		{
 			indexPos:    0,
 			exprStr:     `a not in (-1, 1, 2)`,
 			accessConds: "[not(in(test.t.a, -1, 1, 2))]",
 			filterConds: "[]",
-			resultStr:   `[(NULL,2001) (2002,+inf]]`,
+			resultStr:   `[(NULL,+inf]]`,
 		},
 		{
 			indexPos:    0,
 			exprStr:     `a not in (1, 2, 70)`,
 			accessConds: "[not(in(test.t.a, 1, 2, 70))]", // this is in accordance with MySQL, MySQL won't interpret 70 here as 1970
 			filterConds: "[]",
-			resultStr:   `[(NULL,1970) (1970,2001) (2002,+inf]]`,
+			resultStr:   `[(NULL,+inf]]`,
 		},
 		{
 			indexPos:    0,
@@ -954,7 +954,7 @@ func TestIndexRangeForYear(t *testing.T) {
 			exprStr:     `a not in (1, 2, 15698)`,
 			accessConds: "[not(in(test.t.a, 1, 2, 15698))]",
 			filterConds: "[]",
-			resultStr:   `[(NULL,2001) (2002,+inf]]`,
+			resultStr:   `[(NULL,+inf]]`,
 		},
 		{
 			indexPos:    0,
