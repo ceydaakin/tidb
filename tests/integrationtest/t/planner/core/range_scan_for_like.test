@@ -274,3 +274,19 @@ explain format='plan_tree' select *, length(a) from t use index (ia) where a lik
 select *, length(a) from t use index (ia) where a like '  语 %' order by a,_tidb_rowid;
 explain format='plan_tree' select *, length(a) from t use index (ia) where a like '  语  _' order by a,_tidb_rowid;
 select *, length(a) from t use index (ia) where a like '  语  _' order by a,_tidb_rowid;
+
+# TestIssue73030: LIKE on a non-binary NO PAD collation must be kept as a filter, because the collation-key range also
+# covers strings that are equal under the collation but not character-wise (expansions, ignorable characters).
+drop table if exists t73030;
+create table t73030(id int primary key, a varchar(40) collate utf8mb4_0900_ai_ci, index ia(a));
+insert into t73030 values (1, 'Strasse'), (2, 'Straße'), (3, 'STRASSE'), (4, 'Encyclopaedia'), (5, 'Encyclopædia'), (6, 'Coeur'), (7, 'Cœur'), (8, 'Aeroplane'), (9, 'Æroplane'), (10, 'a\0'), (11, 'a');
+explain format='brief' select a from t73030 use index (ia) where a like 'Coe%';
+select a from t73030 use index (ia) where a like 'Strasse' order by id;
+select a from t73030 use index (ia) where a like 'Encyclopae%' order by id;
+select a from t73030 use index (ia) where a like 'Coe%' order by id;
+select a from t73030 use index (ia) where a like 'Ae%' order by id;
+select id from t73030 use index (ia) where a like 'a' order by id;
+delete from t73030 where a like 'Coe%';
+select a from t73030 where id in (6, 7) order by id;
+explain format='brief' select a from t2 use index (ia) where a like 'aa%';
+drop table t73030;

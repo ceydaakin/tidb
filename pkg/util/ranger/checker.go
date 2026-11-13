@@ -182,7 +182,10 @@ func (c *conditionChecker) checkLikeFunc(scalar *expression.ScalarFunction) (isA
 	// In tidb's implementation, for PAD SPACE collations, the trailing spaces are removed in the index key. So we are
 	// unable to distinguish 'xxx' from 'xxx   ' by a single index range scan, and we may read more data than needed by
 	// the `like` function. Therefore, a Selection is needed to filter the data.
-	if collate.IsPadSpaceCollation(collation) {
+	// For other non-binary collations (e.g. utf8mb4_0900_ai_ci), the range is built over collation sort keys, and
+	// strings that are equal under the collation are not always equal character by character ('Straße' and
+	// 'Strasse', 'Cœur' and 'Coeur'), but `like` compares character by character. See issue #73030.
+	if collate.IsPadSpaceCollation(collation) || !collate.IsBinCollation(collation) {
 		likeFuncReserve = true
 	}
 

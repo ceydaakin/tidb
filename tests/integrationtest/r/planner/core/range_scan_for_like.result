@@ -1042,8 +1042,9 @@ explain format='plan_tree' select *, length(a) from t use index (ia) where a lik
 id	task	access object	operator info
 Projection	root		planner__core__range_scan_for_like.t.a, Column
 └─Projection	root		planner__core__range_scan_for_like.t.a, length(planner__core__range_scan_for_like.t.a)->Column, planner__core__range_scan_for_like.t._tidb_rowid
-  └─IndexReader	root		index:IndexRangeScan
-    └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["\xfb@\xedK\xfbA\x8b\xd5","\xfb@\xedK\xfbA\x8b\xd6"), keep order:true, stats:pseudo
+  └─IndexReader	root		index:Selection
+    └─Selection	cop[tikv]		like(planner__core__range_scan_for_like.t.a, "测试%", 92)
+      └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["\xfb@\xedK\xfbA\x8b\xd5","\xfb@\xedK\xfbA\x8b\xd6"), keep order:true, stats:pseudo
 select *, length(a) from t use index (ia) where a like '测试%' order by a,_tidb_rowid;
 a	length(a)
 测试	6
@@ -1098,8 +1099,9 @@ explain format='plan_tree' select *, length(a) from t use index (ia) where a lik
 id	task	access object	operator info
 Projection	root		planner__core__range_scan_for_like.t.a, Column
 └─Projection	root		planner__core__range_scan_for_like.t.a, length(planner__core__range_scan_for_like.t.a)->Column, planner__core__range_scan_for_like.t._tidb_rowid
-  └─IndexReader	root		index:IndexRangeScan
-    └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["\xfb@\xcf`\xfb@\xd9}","\xfb@\xcf`\xfb@\xd9~"), keep order:true, stats:pseudo
+  └─IndexReader	root		index:Selection
+    └─Selection	cop[tikv]		like(planner__core__range_scan_for_like.t.a, "你好%", 92)
+      └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["\xfb@\xcf`\xfb@\xd9}","\xfb@\xcf`\xfb@\xd9~"), keep order:true, stats:pseudo
 select *, length(a) from t use index (ia) where a like '你好%' order by a,_tidb_rowid;
 a	length(a)
 你好	6
@@ -1107,8 +1109,9 @@ explain format='plan_tree' select *, length(a) from t use index (ia) where a lik
 id	task	access object	operator info
 Projection	root		planner__core__range_scan_for_like.t.a, Column
 └─Projection	root		planner__core__range_scan_for_like.t.a, length(planner__core__range_scan_for_like.t.a)->Column, planner__core__range_scan_for_like.t._tidb_rowid
-  └─IndexReader	root		index:IndexRangeScan
-    └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["\x1cG\x1cG","\x1cG\x1cG"], keep order:true, stats:pseudo
+  └─IndexReader	root		index:Selection
+    └─Selection	cop[tikv]		like(planner__core__range_scan_for_like.t.a, "aa", 92)
+      └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["\x1cG\x1cG","\x1cG\x1cG"], keep order:true, stats:pseudo
 select *, length(a) from t use index (ia) where a like 'aa' order by a,_tidb_rowid;
 a	length(a)
 Aa	2
@@ -1116,8 +1119,9 @@ explain format='plan_tree' select *, length(a) from t use index (ia) where a lik
 id	task	access object	operator info
 Projection	root		planner__core__range_scan_for_like.t.a, Column
 └─Projection	root		planner__core__range_scan_for_like.t.a, length(planner__core__range_scan_for_like.t.a)->Column, planner__core__range_scan_for_like.t._tidb_rowid
-  └─IndexReader	root		index:IndexRangeScan
-    └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["\x1cG\x1cG","\x1cG\x1cH"), keep order:true, stats:pseudo
+  └─IndexReader	root		index:Selection
+    └─Selection	cop[tikv]		like(planner__core__range_scan_for_like.t.a, "aa%", 92)
+      └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["\x1cG\x1cG","\x1cG\x1cH"), keep order:true, stats:pseudo
 select *, length(a) from t use index (ia) where a like 'aa%' order by a,_tidb_rowid;
 a	length(a)
 Aa	2
@@ -1135,8 +1139,9 @@ explain format='plan_tree' select *, length(a) from t use index (ia) where a lik
 id	task	access object	operator info
 Projection	root		planner__core__range_scan_for_like.t.a, Column
 └─Projection	root		planner__core__range_scan_for_like.t.a, length(planner__core__range_scan_for_like.t.a)->Column, planner__core__range_scan_for_like.t._tidb_rowid
-  └─IndexReader	root		index:IndexRangeScan
-    └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["",""], keep order:true, stats:pseudo
+  └─IndexReader	root		index:Selection
+    └─Selection	cop[tikv]		like(planner__core__range_scan_for_like.t.a, "", 92)
+      └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["",""], keep order:true, stats:pseudo
 select *, length(a) from t use index (ia) where a like '' order by a,_tidb_rowid;
 a	length(a)
 	0
@@ -1144,8 +1149,9 @@ explain format='plan_tree' select *, length(a) from t use index (ia) where a lik
 id	task	access object	operator info
 Projection	root		planner__core__range_scan_for_like.t.a, Column
 └─Projection	root		planner__core__range_scan_for_like.t.a, length(planner__core__range_scan_for_like.t.a)->Column, planner__core__range_scan_for_like.t._tidb_rowid
-  └─IndexReader	root		index:IndexRangeScan
-    └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["\x02\t","\x02\t"], keep order:true, stats:pseudo
+  └─IndexReader	root		index:Selection
+    └─Selection	cop[tikv]		like(planner__core__range_scan_for_like.t.a, " ", 92)
+      └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["\x02\t","\x02\t"], keep order:true, stats:pseudo
 select *, length(a) from t use index (ia) where a like ' ' order by a,_tidb_rowid;
 a	length(a)
  	1
@@ -1228,8 +1234,9 @@ explain format='plan_tree' select *, length(a) from t use index (ia) where a lik
 id	task	access object	operator info
 Projection	root		planner__core__range_scan_for_like.t.a, Column
 └─Projection	root		planner__core__range_scan_for_like.t.a, length(planner__core__range_scan_for_like.t.a)->Column, planner__core__range_scan_for_like.t._tidb_rowid
-  └─IndexReader	root		index:IndexRangeScan
-    └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["\x02\t\x02\t\xfbA\x8b\xed\x02\t","\x02\t\x02\t\xfbA\x8b\xed\x02\n"), keep order:true, stats:pseudo
+  └─IndexReader	root		index:Selection
+    └─Selection	cop[tikv]		like(planner__core__range_scan_for_like.t.a, "  语 %", 92)
+      └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:["\x02\t\x02\t\xfbA\x8b\xed\x02\t","\x02\t\x02\t\xfbA\x8b\xed\x02\n"), keep order:true, stats:pseudo
 select *, length(a) from t use index (ia) where a like '  语 %' order by a,_tidb_rowid;
 a	length(a)
   语 言 	10
@@ -1242,3 +1249,36 @@ Projection	root		planner__core__range_scan_for_like.t.a, Column
       └─IndexRangeScan	cop[tikv]	table:t, index:ia(a)	range:("\x02\t\x02\t\xfbA\x8b\xed\x02\t\x02\t","\x02\t\x02\t\xfbA\x8b\xed\x02\t\x02\n"), keep order:true, stats:pseudo
 select *, length(a) from t use index (ia) where a like '  语  _' order by a,_tidb_rowid;
 a	length(a)
+drop table if exists t73030;
+create table t73030(id int primary key, a varchar(40) collate utf8mb4_0900_ai_ci, index ia(a));
+insert into t73030 values (1, 'Strasse'), (2, 'Straße'), (3, 'STRASSE'), (4, 'Encyclopaedia'), (5, 'Encyclopædia'), (6, 'Coeur'), (7, 'Cœur'), (8, 'Aeroplane'), (9, 'Æroplane'), (10, 'a\0'), (11, 'a');
+explain format='brief' select a from t73030 use index (ia) where a like 'Coe%';
+id	estRows	task	access object	operator info
+IndexReader	250.00	root		index:Selection
+└─Selection	250.00	cop[tikv]		like(planner__core__range_scan_for_like.t73030.a, "Coe%", 92)
+  └─IndexRangeScan	250.00	cop[tikv]	table:t73030, index:ia(a)	range:["\x1cz\x1d\xdd\x1c\xaa","\x1cz\x1d\xdd\x1c\xab"), keep order:false, stats:pseudo
+select a from t73030 use index (ia) where a like 'Strasse' order by id;
+a
+Strasse
+STRASSE
+select a from t73030 use index (ia) where a like 'Encyclopae%' order by id;
+a
+Encyclopaedia
+select a from t73030 use index (ia) where a like 'Coe%' order by id;
+a
+Coeur
+select a from t73030 use index (ia) where a like 'Ae%' order by id;
+a
+Aeroplane
+select id from t73030 use index (ia) where a like 'a' order by id;
+id
+11
+delete from t73030 where a like 'Coe%';
+select a from t73030 where id in (6, 7) order by id;
+a
+Cœur
+explain format='brief' select a from t2 use index (ia) where a like 'aa%';
+id	estRows	task	access object	operator info
+IndexReader	250.00	root		index:IndexRangeScan
+└─IndexRangeScan	250.00	cop[tikv]	table:t2, index:ia(a)	range:["aa","ab"), keep order:false, stats:pseudo
+drop table t73030;
