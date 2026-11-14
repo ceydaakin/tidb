@@ -539,7 +539,8 @@ func inferCollation(ctx EvalContext, exprs ...Expression) *ExprCollation {
 				if dstCollation == argCollation {
 				} else if coercibility == CoercibilityExplicit {
 					return nil
-				} else if isBinCollation(dstCollation) {
+				} else if isBinCollation(dstCollation) && !(dstCollation == charset.CollationUTF8MB40900Bin && isBinCollation(argCollation)) {
+					// utf8mb4_0900_bin yields to utf8mb4_bin so the result does not depend on the operand order (#73032).
 				} else if isBinCollation(argCollation) {
 					coercibility, dstCharset, dstCollation = arg.Coercibility(), argCharset, argCollation
 				} else {

@@ -848,3 +848,20 @@ set sql_mode='';
 select cast(compress('b') as char);
 --disable_warnings
 set sql_mode=DEFAULT;
+
+# TestIssue73032: utf8mb4_bin vs utf8mb4_0900_bin must not depend on the operand order
+drop table if exists t73032, o73032, i73032;
+create table t73032 (id int primary key, a varchar(10) collate utf8mb4_bin, b varchar(10) collate utf8mb4_0900_bin);
+insert into t73032 values (1, 'x', 'x'), (2, 'x', 'x '), (3, 'x ', 'x'), (4, 'y', 'z');
+select id from t73032 where a = b order by id;
+select id from t73032 where b = a order by id;
+select id from t73032 where a <> b order by id;
+select id from t73032 where b <> a order by id;
+select collation(concat(a, b)), collation(concat(b, a)) from t73032 limit 1;
+create table o73032 (id int primary key, a varchar(10) collate utf8mb4_bin);
+create table i73032 (id int primary key, b varchar(10) collate utf8mb4_0900_bin, key ib (b));
+insert into o73032 values (1, 'x'), (2, 'x ');
+insert into i73032 values (1, 'x'), (2, 'x ');
+select /*+ HASH_JOIN(o73032, i73032) */ o73032.id, i73032.id from o73032 join i73032 on o73032.a = i73032.b order by 1, 2;
+select /*+ INL_JOIN(i73032) */ o73032.id, i73032.id from o73032 join i73032 on o73032.a = i73032.b order by 1, 2;
+drop table t73032, o73032, i73032;

@@ -165,6 +165,24 @@ func TestInferCollation(t *testing.T) {
 			false,
 			&ExprCollation{CoercibilityImplicit, UNICODE, charset.CharsetUTF8MB4, charset.CollationUTF8MB40900Bin},
 		},
+		// Regression test for #73032: utf8mb4_bin and utf8mb4_0900_bin are both _bin
+		// collations; utf8mb4_bin must win in either operand order, as before #68846.
+		{
+			[]Expression{
+				newExpression(CoercibilityImplicit, UNICODE, charset.CharsetUTF8MB4, charset.CollationUTF8MB4),
+				newExpression(CoercibilityImplicit, UNICODE, charset.CharsetUTF8MB4, charset.CollationUTF8MB40900Bin),
+			},
+			false,
+			&ExprCollation{CoercibilityImplicit, UNICODE, charset.CharsetUTF8MB4, charset.CollationUTF8MB4},
+		},
+		{
+			[]Expression{
+				newExpression(CoercibilityImplicit, UNICODE, charset.CharsetUTF8MB4, charset.CollationUTF8MB40900Bin),
+				newExpression(CoercibilityImplicit, UNICODE, charset.CharsetUTF8MB4, charset.CollationUTF8MB4),
+			},
+			false,
+			&ExprCollation{CoercibilityImplicit, UNICODE, charset.CharsetUTF8MB4, charset.CollationUTF8MB4},
+		},
 		// Regression test: two utf8mb4 columns with utf8mb4_0900_bin + utf8mb4_unicode_ci
 		// combined with a binary blob. utf8mb4_0900_bin should be recognized as bin
 		// collation so binary wins without triggering from_binary() cast.

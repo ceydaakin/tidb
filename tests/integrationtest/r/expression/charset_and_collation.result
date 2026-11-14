@@ -2068,3 +2068,42 @@ cast(compress('b') as char)
 Level	Code	Message
 Warning	3854	Cannot convert string '\x01\x00\x00\x00x\x9C...' from binary to utf8mb4
 set sql_mode=DEFAULT;
+drop table if exists t73032, o73032, i73032;
+create table t73032 (id int primary key, a varchar(10) collate utf8mb4_bin, b varchar(10) collate utf8mb4_0900_bin);
+insert into t73032 values (1, 'x', 'x'), (2, 'x', 'x '), (3, 'x ', 'x'), (4, 'y', 'z');
+select id from t73032 where a = b order by id;
+id
+1
+2
+3
+select id from t73032 where b = a order by id;
+id
+1
+2
+3
+select id from t73032 where a <> b order by id;
+id
+4
+select id from t73032 where b <> a order by id;
+id
+4
+select collation(concat(a, b)), collation(concat(b, a)) from t73032 limit 1;
+collation(concat(a, b))	collation(concat(b, a))
+utf8mb4_bin	utf8mb4_bin
+create table o73032 (id int primary key, a varchar(10) collate utf8mb4_bin);
+create table i73032 (id int primary key, b varchar(10) collate utf8mb4_0900_bin, key ib (b));
+insert into o73032 values (1, 'x'), (2, 'x ');
+insert into i73032 values (1, 'x'), (2, 'x ');
+select /*+ HASH_JOIN(o73032, i73032) */ o73032.id, i73032.id from o73032 join i73032 on o73032.a = i73032.b order by 1, 2;
+id	id
+1	1
+1	2
+2	1
+2	2
+select /*+ INL_JOIN(i73032) */ o73032.id, i73032.id from o73032 join i73032 on o73032.a = i73032.b order by 1, 2;
+id	id
+1	1
+1	2
+2	1
+2	2
+drop table t73032, o73032, i73032;
