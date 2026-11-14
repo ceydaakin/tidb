@@ -36,6 +36,7 @@ import (
 	"github.com/pingcap/tidb/pkg/planner/property"
 	"github.com/pingcap/tidb/pkg/planner/util"
 	"github.com/pingcap/tidb/pkg/types"
+	"github.com/pingcap/tidb/pkg/util/collate"
 	utilhint "github.com/pingcap/tidb/pkg/util/hint"
 	"github.com/pingcap/tidb/pkg/util/intest"
 	"github.com/pingcap/tidb/pkg/util/intset"
@@ -2012,6 +2013,18 @@ func (p *LogicalJoin) SemiJoinRewrite() (base.LogicalPlan, error) {
 	if len(p.LeftConditions) > 0 || len(p.OtherConditions) > 0 {
 		p.SCtx().GetSessionVars().StmtCtx.SetHintWarning("SEMI_JOIN_REWRITE() is inapplicable for SemiJoin with left conditions or other conditions.")
 		return p.Self(), nil
+	}
+
+	// The aggregation below groups by each inner join key in the key's own collation, while the join compares
+	// in the collation of the `=`. If they differ, a group can hold several distinct matches (rows are lost)
+	// or one outer row can match several groups (rows are duplicated).
+	for _, eqCond := range p.EqualConditions {
+		_, collation := eqCond.CharsetAndCollation()
+		innerCol := eqCond.GetArgs()[1].(*expression.Column)
+		if innerCol.RetType.EvalType() == types.ETString && !collate.CompatibleCollate(collation, innerCol.RetType.GetCollate()) {
+			p.SCtx().GetSessionVars().StmtCtx.SetHintWarning("SEMI_JOIN_REWRITE() is inapplicable for SemiJoin whose join keys compare in a collation different from the inner column's.")
+			return p.Self(), nil
+		}
 	}
 
 	innerChild := p.Children()[1]

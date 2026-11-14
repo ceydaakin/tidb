@@ -156,6 +156,35 @@ and exists (
 );
 set @@tidb_opt_enable_semi_join_rewrite = default;
 
+# TestSemiJoinRewriteCollationMismatch, issue:73033
+drop table if exists l, r_ci, r_bin, l_enum, r_ci2, r_0900;
+create table l (id int primary key, x varchar(10) collate utf8mb4_bin);
+create table r_ci (id int primary key, y varchar(10) collate utf8mb4_general_ci);
+create table r_bin (id int primary key, y varchar(10) collate utf8mb4_bin);
+create table l_enum (id int primary key, x enum('a','b'));
+create table r_ci2 (id int primary key, y varchar(10) collate utf8mb4_general_ci);
+create table r_0900 (id int primary key, y varchar(10) collate utf8mb4_0900_bin);
+insert into l values (1, 'a'), (2, 'A'), (3, 'b');
+insert into r_ci values (1, 'a'), (2, 'A'), (3, 'B');
+insert into r_bin values (1, 'a'), (2, 'A'), (3, 'B');
+insert into l_enum values (1, 'a'), (2, 'b');
+insert into r_ci2 values (1, 'A'), (2, 'a');
+insert into r_0900 values (1, 'a'), (2, 'a '), (3, 'a  '), (4, 'b');
+--sorted_result
+select id from l where exists (select /*+ SEMI_JOIN_REWRITE() */ 1 from r_ci where r_ci.y = l.x);
+--sorted_result
+select id from l where exists (select /*+ SEMI_JOIN_REWRITE() */ 1 from r_bin where r_bin.y = l.x collate utf8mb4_general_ci);
+--sorted_result
+select id from l_enum where exists (select /*+ SEMI_JOIN_REWRITE() */ 1 from r_ci2 where r_ci2.y = l_enum.x);
+--sorted_result
+select id from l where exists (select /*+ SEMI_JOIN_REWRITE() */ 1 from r_0900 where r_0900.y = l.x);
+explain format='plan_tree' select id from l where exists (select /*+ SEMI_JOIN_REWRITE() */ 1 from r_ci where r_ci.y = l.x);
+show warnings;
+explain format='plan_tree' select id from l where exists (select /*+ SEMI_JOIN_REWRITE() */ 1 from r_bin where r_bin.y = l.x);
+set @@tidb_opt_enable_semi_join_rewrite = on;
+select count(*) from l where exists (select 1 from r_bin where r_bin.y = l.x collate utf8mb4_general_ci);
+set @@tidb_opt_enable_semi_join_rewrite = default;
+
 # TestDecorrelateLimitInSubquery
 drop table if exists test;
 create table test(id int, value int);

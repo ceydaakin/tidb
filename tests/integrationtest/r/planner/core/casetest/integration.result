@@ -529,6 +529,63 @@ where c.a < 2
 max(t.a)
 1
 set @@tidb_opt_enable_semi_join_rewrite = default;
+drop table if exists l, r_ci, r_bin, l_enum, r_ci2, r_0900;
+create table l (id int primary key, x varchar(10) collate utf8mb4_bin);
+create table r_ci (id int primary key, y varchar(10) collate utf8mb4_general_ci);
+create table r_bin (id int primary key, y varchar(10) collate utf8mb4_bin);
+create table l_enum (id int primary key, x enum('a','b'));
+create table r_ci2 (id int primary key, y varchar(10) collate utf8mb4_general_ci);
+create table r_0900 (id int primary key, y varchar(10) collate utf8mb4_0900_bin);
+insert into l values (1, 'a'), (2, 'A'), (3, 'b');
+insert into r_ci values (1, 'a'), (2, 'A'), (3, 'B');
+insert into r_bin values (1, 'a'), (2, 'A'), (3, 'B');
+insert into l_enum values (1, 'a'), (2, 'b');
+insert into r_ci2 values (1, 'A'), (2, 'a');
+insert into r_0900 values (1, 'a'), (2, 'a '), (3, 'a  '), (4, 'b');
+select id from l where exists (select /*+ SEMI_JOIN_REWRITE() */ 1 from r_ci where r_ci.y = l.x);
+id
+1
+2
+select id from l where exists (select /*+ SEMI_JOIN_REWRITE() */ 1 from r_bin where r_bin.y = l.x collate utf8mb4_general_ci);
+id
+1
+2
+3
+select id from l_enum where exists (select /*+ SEMI_JOIN_REWRITE() */ 1 from r_ci2 where r_ci2.y = l_enum.x);
+id
+1
+select id from l where exists (select /*+ SEMI_JOIN_REWRITE() */ 1 from r_0900 where r_0900.y = l.x);
+id
+1
+3
+explain format='plan_tree' select id from l where exists (select /*+ SEMI_JOIN_REWRITE() */ 1 from r_ci where r_ci.y = l.x);
+id	task	access object	operator info
+HashJoin	root		semi join, left side:TableReader, equal:[eq(planner__core__casetest__integration.l.x, planner__core__casetest__integration.r_ci.y)]
+├─TableReader(Build)	root		data:Selection
+│ └─Selection	cop[tikv]		not(isnull(planner__core__casetest__integration.r_ci.y))
+│   └─TableFullScan	cop[tikv]	table:r_ci	keep order:false, stats:pseudo
+└─TableReader(Probe)	root		data:Selection
+  └─Selection	cop[tikv]		not(isnull(planner__core__casetest__integration.l.x))
+    └─TableFullScan	cop[tikv]	table:l	keep order:false, stats:pseudo
+show warnings;
+Level	Code	Message
+Warning	1815	SEMI_JOIN_REWRITE() is inapplicable for SemiJoin whose join keys compare in a collation different from the inner column's.
+explain format='plan_tree' select id from l where exists (select /*+ SEMI_JOIN_REWRITE() */ 1 from r_bin where r_bin.y = l.x);
+id	task	access object	operator info
+HashJoin	root		inner join, equal:[eq(planner__core__casetest__integration.l.x, planner__core__casetest__integration.r_bin.y)]
+├─HashAgg(Build)	root		group by:planner__core__casetest__integration.r_bin.y, funcs:firstrow(planner__core__casetest__integration.r_bin.y)->planner__core__casetest__integration.r_bin.y
+│ └─TableReader	root		data:HashAgg
+│   └─HashAgg	cop[tikv]		group by:planner__core__casetest__integration.r_bin.y, 
+│     └─Selection	cop[tikv]		not(isnull(planner__core__casetest__integration.r_bin.y))
+│       └─TableFullScan	cop[tikv]	table:r_bin	keep order:false, stats:pseudo
+└─TableReader(Probe)	root		data:Selection
+  └─Selection	cop[tikv]		not(isnull(planner__core__casetest__integration.l.x))
+    └─TableFullScan	cop[tikv]	table:l	keep order:false, stats:pseudo
+set @@tidb_opt_enable_semi_join_rewrite = on;
+select count(*) from l where exists (select 1 from r_bin where r_bin.y = l.x collate utf8mb4_general_ci);
+count(*)
+3
+set @@tidb_opt_enable_semi_join_rewrite = default;
 drop table if exists test;
 create table test(id int, value int);
 drop table if exists t;
