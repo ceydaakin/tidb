@@ -828,6 +828,31 @@ func checkSysTableColumnCollateCompatibility(dbNameL, tableNameL, columnNameL, u
 	return exists
 }
 
+// keepsPrivilegeColumnsCollate reports whether every checked privilege column
+// exists in both tables with the same collation. Then the backup rows are
+// replaced into the cluster without a collation change, so they cannot
+// collide; e.g. a cluster upgraded from an old version keeps utf8mb4_bin.
+func keepsPrivilegeColumnsCollate(columns map[string]struct{}, upstreamTable, downstreamTable *model.TableInfo) bool {
+	downstreamCollates := make(map[string]string, len(columns))
+	for _, col := range downstreamTable.Columns {
+		if _, exists := columns[col.Name.L]; exists {
+			downstreamCollates[col.Name.L] = col.GetCollate()
+		}
+	}
+	sameCount := 0
+	for _, col := range upstreamTable.Columns {
+		if _, exists := columns[col.Name.L]; !exists {
+			continue
+		}
+		downstreamCollate, exists := downstreamCollates[col.Name.L]
+		if !exists || downstreamCollate != col.GetCollate() {
+			return false
+		}
+		sameCount++
+	}
+	return sameCount == len(columns)
+}
+
 func (rc *SnapClient) checkPrivilegeTableRowsCollateCompatibility(
 	ctx context.Context,
 	dbNameL, tableNameL string,
@@ -839,6 +864,9 @@ func (rc *SnapClient) checkPrivilegeTableRowsCollateCompatibility(
 	}
 	collateCompatibilityColumnMap, exists := collateCompatibilityTableMap[tableNameL]
 	if !exists {
+		return nil
+	}
+	if keepsPrivilegeColumnsCollate(collateCompatibilityColumnMap.columns, upstreamTable, downstreamTable) {
 		return nil
 	}
 	colCount := 0
@@ -862,7 +890,7 @@ func (rc *SnapClient) checkPrivilegeTableRowsCollateCompatibility(
 		if _, exists := collateCompatibilityColumnMap.columns[col.Name.L]; exists {
 			if col.GetCollate() != "utf8mb4_general_ci" {
 				return errors.Annotatef(berrors.ErrRestoreIncompatibleSys,
-					"incompatible column collate, downstream table %s.%s column %s collate should be %s",
+					"incompatible column collate, downstream table %s.%s column %s collate is %s but should be utf8mb4_general_ci",
 					dbNameL, tableNameL, col.Name.L, col.GetCollate())
 			}
 			colCount += 1

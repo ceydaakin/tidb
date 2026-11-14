@@ -438,6 +438,11 @@ func TestCheckPrivilegeTableRowsCollateCompatibility(t *testing.T) {
 	mse.MustExecute("DELETE FROM __TiDB_BR_Temporary_mysql.db WHERE DB = 'cafe'")
 	err = rc.CheckPrivilegeTableRowsCollateCompatibility(ctx, "mysql", "db", backupTable, downstreamDBTable)
 	require.NoError(t, err)
+	// a utf8mb4_bin downstream (naturally upgraded cluster) keeps the backup's
+	// collation, so rows that differ only by case need no check (#73048)
+	mse.MustExecute("INSERT INTO __TiDB_BR_Temporary_mysql.db (Host,DB,User) VALUES ('%','Test','newroot')")
+	err = rc.CheckPrivilegeTableRowsCollateCompatibility(ctx, "mysql", "db", backupTable, backupTable)
+	require.NoError(t, err)
 	mse.MustExecute("DROP TABLE __TiDB_BR_Temporary_mysql.db")
 
 	// case 2: privilege table
@@ -494,6 +499,9 @@ func TestCheckPrivilegeTableRowsCollateCompatibility(t *testing.T) {
 		err = rc.CheckPrivilegeTableRowsCollateCompatibility(ctx, "mysql", "tables_priv", backupTable, downstreamTablesTable)
 		require.NoError(t, err)
 	}
+	mse.MustExecute("INSERT INTO __TiDB_BR_Temporary_mysql.tables_priv (Host,DB,User,Table_name) VALUES ('%','tEst','newroot','Ta1')")
+	err = rc.CheckPrivilegeTableRowsCollateCompatibility(ctx, "mysql", "tables_priv", backupTable, backupTable)
+	require.NoError(t, err)
 	mse.MustExecute("DROP TABLE __TiDB_BR_Temporary_mysql.tables_priv")
 
 	// case 3: privilege column
@@ -546,6 +554,9 @@ func TestCheckPrivilegeTableRowsCollateCompatibility(t *testing.T) {
 		err = rc.CheckPrivilegeTableRowsCollateCompatibility(ctx, "mysql", "columns_priv", backupTable, downstreamColumnsTable)
 		require.NoError(t, err)
 	}
+	mse.MustExecute("INSERT INTO __TiDB_BR_Temporary_mysql.columns_priv (Host,DB,User,Table_name,Column_name) VALUES ('%','Test','newroot','Ta1','Ca1')")
+	err = rc.CheckPrivilegeTableRowsCollateCompatibility(ctx, "mysql", "columns_priv", backupTable, backupTable)
+	require.NoError(t, err)
 	mse.MustExecute("DROP TABLE __TiDB_BR_Temporary_mysql.columns_priv")
 }
 
