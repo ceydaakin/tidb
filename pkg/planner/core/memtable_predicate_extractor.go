@@ -336,12 +336,17 @@ func (helper *extractHelper) extractCol(
 		}
 		var colName string
 		var datums []types.Datum // the memory of datums should not be reused, they will be put into result.
+		keepPredicate := false
 		switch helper.getStringFunctionName(fn) {
 		case ast.EQ:
 			helper.enableScalarPushDown = true
 			colName, datums, _ = helper.extractColBinaryOpConsExpr(ctx, extractCols, fn)
 			if colName == extractColName {
 				helper.setColumnPushedDownFn(colName, extractCols, fn)
+				// For `upper(col) = const` / `lower(col) = const` the extracted
+				// values only narrow the rows (they are compared case-insensitively),
+				// so keep the predicate to evaluate it with the function semantics.
+				keepPredicate = helper.extractColBinaryOpScalarFunc(extractCols, fn) != nil
 			}
 			helper.enableScalarPushDown = false
 		case ast.In:
@@ -352,6 +357,9 @@ func (helper *extractHelper) extractCol(
 		if colName == extractColName {
 			result = helper.merge(result, datums, valueToLower)
 			skipRequest = len(result) == 0
+			if keepPredicate {
+				remained = append(remained, expr)
+			}
 		} else {
 			remained = append(remained, expr)
 		}

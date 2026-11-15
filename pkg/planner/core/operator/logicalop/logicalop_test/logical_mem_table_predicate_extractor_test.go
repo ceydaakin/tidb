@@ -1892,6 +1892,7 @@ func TestColumns(t *testing.T) {
 		{
 			sql:        `select * from INFORMATION_SCHEMA.COLUMNS where lower(column_name)=lower('T');`,
 			columnName: set.NewStringSet("t"),
+			remained:   "[eq(lower(Column#4), t)]",
 		},
 		{
 			sql:        `select * from INFORMATION_SCHEMA.COLUMNS where column_name=lower('T');`,

@@ -120,7 +120,7 @@ InnoDB	NONCLUSTERED
 explain format='brief' select engine, tidb_pk_type from information_schema.tables where (table_name ='t4' or lower(table_name) = 't5') and  upper(table_schema) = 'INFOSCHEMA__INFOSCHEMA';
 id	estRows	task	access object	operator info
 Projection	8000.00	root		Column#5, Column#24
-└─Selection	8000.00	root		or(eq(Column#3, "t4"), eq(lower(Column#3), "t5"))
+└─Selection	8000.00	root		eq(upper(Column#2), "INFOSCHEMA__INFOSCHEMA"), or(eq(Column#3, "t4"), eq(lower(Column#3), "t5"))
   └─MemTableScan	10000.00	root	table:TABLES	table_schema:["infoschema__infoschema"]
 select engine, tidb_pk_type from information_schema.tables where (table_name ='t4' or table_name = 't5') and table_schema = 'infoschema__infoschema';
 engine	tidb_pk_type
@@ -128,7 +128,9 @@ InnoDB	NONCLUSTERED
 InnoDB	NONCLUSTERED
 explain format='brief' select engine, tidb_pk_type from information_schema.tables where table_name ='t4' and upper(table_name) ='T4' and table_schema = 'infoschema__infoschema';
 id	estRows	task	access object	operator info
-MemTableScan	10000.00	root	table:TABLES	table_name:["t4"], table_schema:["infoschema__infoschema"]
+Projection	8000.00	root		Column#5, Column#24
+└─Selection	8000.00	root		eq(upper(Column#3), "T4")
+  └─MemTableScan	10000.00	root	table:TABLES	table_name:["t4"], table_schema:["infoschema__infoschema"]
 select engine, tidb_pk_type from information_schema.tables where table_name ='t4' and upper(table_name) ='T4' and table_schema = 'infoschema__infoschema';
 engine	tidb_pk_type
 InnoDB	NONCLUSTERED
@@ -517,3 +519,42 @@ desc format=brief select SCHEMA_NAME from information_schema.schemata where sche
 id	estRows	task	access object	operator info
 Projection	10000.00	root		Column#2
 └─MemTableScan	10000.00	root	table:SCHEMATA	schema_name_pattern:[test_db_0[0-8][0-7]]
+use infoschema__infoschema;
+drop table if exists shadow_base, sctl_min;
+create table shadow_base (a int, b int, c int);
+create temporary table shadow_base (tmpcol varchar(5));
+select table_name, column_name from information_schema.columns where table_schema = 'infoschema__infoschema' and table_name = 'shadow_base' order by ordinal_position;
+table_name	column_name
+shadow_base	a
+shadow_base	b
+shadow_base	c
+select table_name, column_name from information_schema.columns where table_schema = 'infoschema__infoschema' and table_name in ('shadow_base', 'x') order by ordinal_position;
+table_name	column_name
+shadow_base	a
+shadow_base	b
+shadow_base	c
+select table_name from information_schema.tables where table_schema = 'infoschema__infoschema' and table_name = 'shadow_base';
+table_name
+shadow_base
+drop temporary table shadow_base;
+drop table shadow_base;
+create table sctl_min (a int);
+select count(*) from information_schema.tables where table_schema = 'infoschema__infoschema' and upper(table_name) = 'sctl_min';
+count(*)
+0
+select count(*) from information_schema.tables where table_schema = 'infoschema__infoschema' and upper(table_name) = 'ScTl_MiN';
+count(*)
+0
+select count(*) from information_schema.tables where table_schema = 'infoschema__infoschema' and lower(table_name) = 'SCTL_MIN';
+count(*)
+0
+select count(*) from information_schema.tables where table_schema = 'infoschema__infoschema' and upper(table_name) = 'SCTL_MIN';
+count(*)
+1
+select count(*) from information_schema.tables where table_schema = 'infoschema__infoschema' and lower(table_name) = 'sctl_min';
+count(*)
+1
+select count(*) from information_schema.cluster_config where upper(type) = 'tidb';
+count(*)
+0
+drop table sctl_min;

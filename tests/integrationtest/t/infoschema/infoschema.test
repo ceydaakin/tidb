@@ -279,3 +279,22 @@ drop database db2;
 create database test_db_080;
 select SCHEMA_NAME from information_schema.schemata where schema_name rlike 'test_db_0[0-8][0-7]';
 desc format=brief select SCHEMA_NAME from information_schema.schemata where schema_name rlike 'test_db_0[0-8][0-7]';
+
+# TestIssue73122
+use infoschema__infoschema;
+drop table if exists shadow_base, sctl_min;
+create table shadow_base (a int, b int, c int);
+create temporary table shadow_base (tmpcol varchar(5));
+select table_name, column_name from information_schema.columns where table_schema = 'infoschema__infoschema' and table_name = 'shadow_base' order by ordinal_position;
+select table_name, column_name from information_schema.columns where table_schema = 'infoschema__infoschema' and table_name in ('shadow_base', 'x') order by ordinal_position;
+select table_name from information_schema.tables where table_schema = 'infoschema__infoschema' and table_name = 'shadow_base';
+drop temporary table shadow_base;
+drop table shadow_base;
+create table sctl_min (a int);
+select count(*) from information_schema.tables where table_schema = 'infoschema__infoschema' and upper(table_name) = 'sctl_min';
+select count(*) from information_schema.tables where table_schema = 'infoschema__infoschema' and upper(table_name) = 'ScTl_MiN';
+select count(*) from information_schema.tables where table_schema = 'infoschema__infoschema' and lower(table_name) = 'SCTL_MIN';
+select count(*) from information_schema.tables where table_schema = 'infoschema__infoschema' and upper(table_name) = 'SCTL_MIN';
+select count(*) from information_schema.tables where table_schema = 'infoschema__infoschema' and lower(table_name) = 'sctl_min';
+select count(*) from information_schema.cluster_config where upper(type) = 'tidb';
+drop table sctl_min;

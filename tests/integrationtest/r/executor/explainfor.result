@@ -840,10 +840,12 @@ id	task	access object	operator info
 MemTableScan	root	table:TABLES	table_name:["t"]
 explain format='plan_tree' select * from information_schema.tables where lower(table_name)='t';
 id	task	access object	operator info
-MemTableScan	root	table:TABLES	table_name:["t"]
+Selection	root		eq(lower(Column), "t")
+└─MemTableScan	root	table:TABLES	table_name:["t"]
 explain format='plan_tree' select * from information_schema.tables where upper(table_name)=upper('t');
 id	task	access object	operator info
-MemTableScan	root	table:TABLES	table_name:["t"]
+Selection	root		eq(upper(Column), "T")
+└─MemTableScan	root	table:TABLES	table_name:["t"]
 explain format='plan_tree' select * from information_schema.REFERENTIAL_CONSTRAINTS where table_name='t';
 id	task	access object	operator info
 MemTableScan	root	table:REFERENTIAL_CONSTRAINTS	table_name:["t"]

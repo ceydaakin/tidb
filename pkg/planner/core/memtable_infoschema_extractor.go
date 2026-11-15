@@ -704,6 +704,13 @@ func findTableAndSchemaByName(
 		table  *model.TableInfo
 	}
 	schemaAndTbls := make([]schemaAndTable, 0, len(tableNames))
+	// Memory tables never list local temporary tables, but a local temporary
+	// table shadows a same-name base table in name lookups. Look names up
+	// without local temporary tables so the base table is still returned, the
+	// same as the full-scan path does.
+	if ext, ok := is.(*infoschema.SessionExtendedInfoSchema); ok && ext.LocalTemporaryTables != nil {
+		is = &infoschema.SessionExtendedInfoSchema{InfoSchema: ext.InfoSchema, MdlTables: ext.MdlTables}
+	}
 	for _, s := range schemas {
 		tables, err := infoschema.TableInfosByNames(ctx, is, s, tableNames)
 		if err != nil {
