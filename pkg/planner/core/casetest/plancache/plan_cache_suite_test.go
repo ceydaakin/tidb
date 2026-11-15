@@ -824,6 +824,30 @@ func TestPlanCacheWithSubquery(t *testing.T) {
 		tk.MustQuery("select @@last_plan_from_cache").Check(testkit.Rows("0"))
 		tk.MustQuery("show warnings").Check(testkit.Rows())
 	}
+
+	// A materialized CTE keeps its definition in PhysicalCTE.SeedPlan/RecurPlan, outside the plan children.
+	// The ranges there must be rebuilt when a cached plan is reused (issue #73112).
+	tk.MustExec("set @@session.tidb_enable_plan_cache_for_subquery = 1")
+	tk.MustExec("set @@session.tidb_opt_force_inline_cte = 0")
+	tk.MustExec("create table t73112(id int primary key)")
+	tk.MustExec("insert into t73112 values (1), (2), (3), (4)")
+	tk.MustExec(`prepare stmt from 'with c as (select id from t73112 where id >= ?)
+		select a.id, b.id from c a join c b on a.id < b.id order by a.id, b.id limit 1'`)
+	tk.MustExec("set @cut = 2")
+	tk.MustQuery("execute stmt using @cut").Check(testkit.Rows("2 3"))
+	tk.MustQuery("execute stmt using @cut").Check(testkit.Rows("2 3"))
+	tk.MustQuery("select @@last_plan_from_cache").Check(testkit.Rows("1"))
+	tk.MustExec("set @cut = 3")
+	tk.MustQuery("execute stmt using @cut").Check(testkit.Rows("3 4"))
+	tk.MustQuery("select @@last_plan_from_cache").Check(testkit.Rows("1"))
+
+	tk.MustExec(`prepare stmt from 'with recursive c(n) as (select id from t73112 where id >= ? union all select n + 1 from c where n < ?)
+		select count(*), min(n) from c'`)
+	tk.MustExec("set @lo = 2, @hi = 4")
+	tk.MustQuery("execute stmt using @lo, @hi").Check(testkit.Rows("6 2"))
+	tk.MustQuery("execute stmt using @lo, @hi").Check(testkit.Rows("6 2"))
+	tk.MustExec("set @lo = 3")
+	tk.MustQuery("execute stmt using @lo, @hi").Check(testkit.Rows("3 3"))
 }
 
 func convertQueryToPrepExecStmt(q string) (normalQuery, prepStmt string, parameters []string) {
