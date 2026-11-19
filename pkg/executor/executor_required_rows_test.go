@@ -558,13 +558,17 @@ func TestProjectionUnparallelRequiredRows(t *testing.T) {
 		}
 		executor := buildProjectionExec(sctx, exprs, ds, 0)
 		require.NoError(t, executor.Open(ctx))
+		proj := executor.(*ProjectionExec)
 		chk := exec.NewFirstChunk(executor)
 		for i := range testCase.requiredRows {
 			chk.SetRequiredRows(testCase.requiredRows[i], maxChunkSize)
 			require.NoError(t, executor.Next(ctx, chk))
 			require.Equal(t, testCase.expectedRows[i], chk.NumRows())
+			// Swapped columns now belong to chk, so the projection only accounts for what childResult still holds (#73465).
+			require.Equal(t, proj.childResult.MemoryUsage(), proj.memTracker.BytesConsumed())
 		}
 		require.NoError(t, executor.Close())
+		require.Zero(t, proj.memTracker.BytesConsumed())
 		require.NoError(t, ds.checkNumNextCalled())
 	}
 }
