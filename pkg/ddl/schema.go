@@ -608,6 +608,12 @@ func (w *worker) onRecoverSchema(jobCtx *jobContext, job *model.Job) (ver int64,
 	switch schemaInfo.State {
 	case model.StateNone:
 		// none -> write only
+		if schemaInfo.ReadOnly {
+			if err := checkSchemaReadOnlyCompatibility(jobCtx.ctx); err != nil {
+				job.State = model.JobStateCancelled
+				return ver, err
+			}
+		}
 		// check GC enable and update flag.
 		if gcEnable {
 			args.CheckFlag = recoverCheckFlagEnableGC

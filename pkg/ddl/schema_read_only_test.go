@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pingcap/failpoint"
 	"github.com/pingcap/tidb/pkg/config/kerneltype"
 	"github.com/pingcap/tidb/pkg/ddl"
 	ddlutil "github.com/pingcap/tidb/pkg/ddl/util"
@@ -1187,6 +1188,54 @@ func TestSchemaReadOnlyRecoveryAndCancellation(t *testing.T) {
 		tk.MustExec("flashback table ro.a")
 		tk.MustExec("recover table ro.b")
 		tk.MustQuery("select table_name from information_schema.tables where table_schema='ro' order by table_name").Check(testkit.Rows("a", "b"))
+	})
+	t.Run("RecoverReadOnlyDatabaseMixedVersion", func(t *testing.T) {
+		enableReadOnlyDDLFp(t)
+		store, dom := testkit.CreateMockStoreAndDomain(t)
+		tk := testkit.NewTestKit(t, store)
+		gcWasEnabled := ddlutil.IsEmulatorGCEnable()
+		ddlutil.EmulatorGCDisable()
+		defer func() {
+			if gcWasEnabled {
+				ddlutil.EmulatorGCEnable()
+			}
+		}()
+		tk.MustExec(fmt.Sprintf("insert into mysql.tidb values ('tikv_gc_safe_point', '%s', '') on duplicate key update variable_value=values(variable_value)", time.Now().Add(-time.Hour).Format("20060102-15:04:05 -0700 MST")))
+		tk.MustExec("create database ro")
+		tk.MustExec("create table ro.t(id int)")
+		tk.MustExec("alter database ro read only = 1")
+		tk.MustExec("grant RESTRICTED_REPLICA_WRITER_ADMIN on *.* to 'root'@'%'")
+		require.NoError(t, tk.Session().Auth(&auth.UserIdentity{Username: "root", Hostname: "%"}, nil, nil, nil))
+		tk.MustExec("drop database ro")
+		const mixedVersion = "return(`{\"new\":{\"schema_read_only\":true},\"old\":{}}`)"
+		const serverInfoFp = "github.com/pingcap/tidb/pkg/domain/serverinfo/mockGetAllServerInfo"
+
+		// Rejected at submission while an old node is in the cluster.
+		testfailpoint.Enable(t, serverInfoFp, mixedVersion)
+		require.ErrorContains(t, tk.ExecToErr("flashback database ro"), "do not support database read-only")
+		testfailpoint.Disable(t, serverInfoFp)
+		_, ok := dom.InfoSchema().SchemaByName(ast.NewCIStr("ro"))
+		require.False(t, ok)
+
+		// An old node that joins after submission is caught by the DDL owner.
+		testfailpoint.EnableCall(t, "github.com/pingcap/tidb/pkg/ddl/beforeRunOneJobStep", func(job *model.Job) {
+			if job.Type == model.ActionRecoverSchema {
+				// Runs on the DDL worker goroutine; a failed Enable shows up as the
+				// flashback below succeeding.
+				_ = failpoint.Enable(serverInfoFp, mixedVersion)
+			}
+		})
+		require.ErrorContains(t, tk.ExecToErr("flashback database ro"), "do not support database read-only")
+		testfailpoint.Disable(t, "github.com/pingcap/tidb/pkg/ddl/beforeRunOneJobStep")
+		testfailpoint.Disable(t, serverInfoFp)
+		_, ok = dom.InfoSchema().SchemaByName(ast.NewCIStr("ro"))
+		require.False(t, ok)
+
+		// Retry succeeds after the upgrade and keeps the read-only flag.
+		tk.MustExec("flashback database ro")
+		db, ok := dom.InfoSchema().SchemaByName(ast.NewCIStr("ro"))
+		require.True(t, ok)
+		require.True(t, db.ReadOnly)
 	})
 }
 
