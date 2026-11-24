@@ -537,6 +537,24 @@ GROUP BY x WITH ROLLUP
 HAVING EXISTS (SELECT 1 FROM t_panic WHERE x IS NULL);`).Check(testkit.Rows("<nil>"))
 	}
 
+	// outer-join-rollup-null-filled-col-not-anti-semi-join
+	{
+		tk := prepareSharedTestKit(t)
+		// issue:73638
+		tk.MustExec("create table t73638(a int, b int not null, c int)")
+		tk.MustExec("insert into t73638 values (1,10,100),(2,20,200),(3,10,300),(4,20,400),(5,10,500),(6,20,600)")
+		// b is NOT NULL in the table, but WITH ROLLUP fills it with NULL in the super-aggregate rows,
+		// so `r.b IS NULL` does not prove the outer join found no match.
+		leftJoin := `select count(*) from t73638 o left join (
+  select a, b, sum(c) as s from t73638 group by a, b with rollup
+) r on o.a = r.a where r.b is null`
+		tk.MustQuery(leftJoin).Check(testkit.Rows("6"))
+		require.NotContains(t, fmt.Sprint(tk.MustQuery("explain format='brief' "+leftJoin).Rows()), "anti semi join")
+		tk.MustQuery(`select count(*) from (
+  select a, b, sum(c) as s from t73638 group by a, b with rollup
+) r right join t73638 o on o.a = r.a where isnull(r.b)`).Check(testkit.Rows("6"))
+	}
+
 	// merge-join-with-correlated-count
 	{
 		tk := prepareSharedTestKit(t)

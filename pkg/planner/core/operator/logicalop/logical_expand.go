@@ -24,6 +24,7 @@ import (
 	fd "github.com/pingcap/tidb/pkg/planner/funcdep"
 	"github.com/pingcap/tidb/pkg/types"
 	"github.com/pingcap/tidb/pkg/util/dbterror/plannererrors"
+	"github.com/pingcap/tidb/pkg/util/intset"
 	"github.com/pingcap/tidb/pkg/util/plancodec"
 	"github.com/pingcap/tipb/go-tipb"
 )
@@ -169,7 +170,27 @@ func (p *LogicalExpand) ExtractCorrelatedCols() []*expression.CorrelatedColumn {
 // ExtractFD implements the base.LogicalPlan.<22nd> interface, extracting the FD from bottom up.
 func (p *LogicalExpand) ExtractFD() *fd.FDSet {
 	// basically extract the children's fdSet.
-	return p.LogicalSchemaProducer.ExtractFD()
+	fds := p.LogicalSchemaProducer.ExtractFD()
+	// A grouping-set column that is absent from some grouping set is filled with NULL in that
+	// level projection, so it is nullable even if the child guarantees it NOT NULL. Keeping it in
+	// NotNullCols lets rules like outer-join-to-anti-semi-join drop the rollup's NULL rows.
+	fds.MakeNullable(p.nullableGroupingSetCols())
+	return fds
+}
+
+// nullableGroupingSetCols returns the grouping-set columns that are filled with NULL by at least
+// one grouping set, the same columns AdjustNullabilityFromGroupingSets marks as nullable.
+func (p *LogicalExpand) nullableGroupingSetCols() intset.FastIntSet {
+	nullable := *p.RollupGroupingSets.AllSetsColIDs()
+	if len(p.RollupGroupingSets) == 0 {
+		return nullable
+	}
+	inEverySet := *p.RollupGroupingSets[0].AllColIDs()
+	for _, oneSet := range p.RollupGroupingSets[1:] {
+		inEverySet.IntersectionWith(*oneSet.AllColIDs())
+	}
+	nullable.DifferenceWith(inEverySet)
+	return nullable
 }
 
 // GetBaseLogicalPlan inherits BaseLogicalPlan.LogicalPlan.<23rd> implementation.
