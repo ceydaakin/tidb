@@ -128,6 +128,26 @@ func TestJoinReorderSuite(t *testing.T) {
 				testKit.MustQuery("show warnings").CheckContain("leading hint is inapplicable")
 			})
 
+			t.Run("TestLeadingHintDerivedTableAliasWithCastInSubquery", func(t *testing.T) {
+				// https://github.com/pingcap/tidb/issues/73687
+				testKit.MustExec("drop table if exists l_73687, u_73687, r_73687;")
+				testKit.MustExec("create table l_73687(id int primary key, k int, x double, key(k));")
+				testKit.MustExec("create table u_73687(k int, key(k));")
+				testKit.MustExec("create table r_73687(k int not null unique, s blob);")
+				testKit.MustExec("set @@tidb_opt_insubq_to_join_and_agg=on")
+				// The explicit CAST keeps a projection over the derived table after the
+				// distinct aggregation is eliminated; the hint must still match `d`.
+				for _, sel := range []string{"cast(d.s as double)", "d.s"} {
+					rows := testKit.MustQuery("explain format = 'plan_tree' " +
+						"select /*+ leading(l_73687, d@sel_2, u_73687) */ l_73687.id " +
+						"from l_73687 join u_73687 on l_73687.k = u_73687.k " +
+						"where (l_73687.k, l_73687.x) in (select d.k, " + sel + " from (select r_73687.k, r_73687.s from r_73687) as d)").Rows()
+					testKit.MustQuery("show warnings").Check(testkit.Rows())
+					// LEADING(l, d, u): u is joined last, on top of the l-d join.
+					require.Contains(t, rows[0][3], "eq(test.l_73687.k, test.u_73687.k)", sel)
+				}
+			})
+
 			t.Run("TestLeadingHintWithNonEqJoinUnderOuterJoin", func(t *testing.T) {
 				testKit.MustExec("set @@tidb_enable_outer_join_reorder=true")
 				testKit.MustExec("drop table if exists t1_56513, t2_56513, t3_56513;")

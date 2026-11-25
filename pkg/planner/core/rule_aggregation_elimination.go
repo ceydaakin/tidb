@@ -184,6 +184,11 @@ func ConvertAggToProj(agg *logicalop.LogicalAggregation, schema *expression.Sche
 		proj.Exprs = append(proj.Exprs, expr)
 	}
 	proj.SetSchema(schema.Clone())
+	// Keep the aggregation's output names. Otherwise the projection lazily takes its
+	// child's names, and once projection elimination removes that child it reports
+	// the base table's names instead of the derived table alias, so LEADING hints
+	// can no longer match it (#73687).
+	proj.SetOutputNames(agg.OutputNames())
 	return true, proj
 }
 
