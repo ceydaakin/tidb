@@ -922,6 +922,25 @@ func (sf *ScalarFunction) GetSingleColumn(reverse bool) (*Column, bool) {
 	return nil, false
 }
 
+// KeepsDistinctValues reports whether a sort key accepted by GetSingleColumn maps distinct
+// column values to distinct results. Floating-point + and - round, so distinct values can
+// tie (`c + 1e100` is 1e100 for every small c), and the rows must then follow the next
+// ORDER BY item instead of the index order. Unary minus is exact.
+func (sf *ScalarFunction) KeepsDistinctValues() bool {
+	switch sf.FuncName.L {
+	case ast.Plus, ast.Minus:
+		if sf.RetType.EvalType() == types.ETReal {
+			return false
+		}
+	}
+	for _, arg := range sf.GetArgs() {
+		if f, ok := arg.(*ScalarFunction); ok && !f.KeepsDistinctValues() {
+			return false
+		}
+	}
+	return true
+}
+
 // isNonNullConstant returns true if expr is an immutable constant whose value is non-NULL.
 // Parameter markers and deferred expressions are rejected: their value can change
 // between executions of a cached plan, e.g. `NULLIF(?, 0) - col` may become NULL.

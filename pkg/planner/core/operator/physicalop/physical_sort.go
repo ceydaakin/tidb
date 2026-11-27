@@ -220,13 +220,17 @@ func getNominalSort(ls *logicalop.LogicalSort, reqProp *property.PhysicalPropert
 func GetPropByOrderByItemsContainScalarFunc(items []*util.ByItems) (_ *property.PhysicalProperty, _, _ bool) {
 	propItems := make([]property.SortItem, 0, len(items))
 	onlyColumn := true
-	for _, item := range items {
+	for i, item := range items {
 		switch expr := item.Expr.(type) {
 		case *expression.Column:
 			propItems = append(propItems, property.SortItem{Col: expr, Desc: item.Desc})
 		case *expression.ScalarFunction:
 			col, desc := expr.GetSingleColumn(item.Desc)
 			if col == nil {
+				return nil, false, false
+			}
+			// Rows that tie on a rounded key must be ordered by the next item, not by the index.
+			if i < len(items)-1 && !expr.KeepsDistinctValues() {
 				return nil, false, false
 			}
 			// Reversing value order does not reverse NULL order: -NULL is still

@@ -1010,6 +1010,34 @@ ORDER BY t1.a, t2.a, t3.a, var`
 		tk.MustQuery("execute s using @p").Check(testkit.Rows("1", "2", "3"))
 		tk.MustQuery("select @@last_plan_from_cache").Check(testkit.Rows("1"))
 	})
+
+	// issue-73866-float-arithmetic-sort-key-breaks-tie-breaker
+	testkit.RunTestUnderCascades(t, func(t *testing.T, tk *testkit.TestKit, cascades, caller string) {
+		resetTestDB(t, tk)
+		tk.MustExec("create table t (id int primary key, c double not null, key i(c, id))")
+		tk.MustExec("insert into t values (1, 30), (2, 10), (3, 20)")
+		tk.MustExec("analyze table t")
+		// c + 1e100 rounds every value to 1e100, so the rows tie and id decides the order
+		for _, orderBy := range []string{"c + 1e100, id", "1e100 + c, id", "c - 1e100, id", "1e100 - c desc, id", "-(c + 1e100) desc, id"} {
+			tk.MustQuery("select /* issue:73866 */ id from t use index(i) order by " + orderBy).Check(testkit.Rows("1", "2", "3"))
+			tk.MustQuery("select /* issue:73866 */ id from t ignore index(i) order by " + orderBy).Check(testkit.Rows("1", "2", "3"))
+		}
+		// unary minus is exact for floating-point values, so the index order can still be used
+		query := "select /* issue:73866 */ id from t use index(i) order by -c desc, id"
+		tk.MustQuery(query).Check(testkit.Rows("2", "3", "1"))
+		tk.MustQuery("explain format = 'brief' " + query).CheckNotContain("Sort")
+		// as the last ORDER BY item, ties need no particular order, so no Sort is needed either
+		query = "select /* issue:73866 */ c from t use index(i) order by c + 1"
+		tk.MustQuery(query).Check(testkit.Rows("10", "20", "30"))
+		tk.MustQuery("explain format = 'brief' " + query).CheckNotContain("Sort")
+		// integer arithmetic stays exact and keeps the index order
+		tk.MustExec("create table t2 (id int primary key, c bigint not null, key i(c, id))")
+		tk.MustExec("insert into t2 values (1, 9007199254740993), (2, 9007199254740992)")
+		tk.MustQuery("select /* issue:73866 */ id from t2 use index(i) order by c + 1e0, id").Check(testkit.Rows("1", "2"))
+		query = "select /* issue:73866 */ id from t2 use index(i) order by c + 1, id"
+		tk.MustQuery(query).Check(testkit.Rows("2", "1"))
+		tk.MustQuery("explain format = 'brief' " + query).CheckNotContain("Sort")
+	})
 }
 
 func TestOnlyFullGroupCantFeelUnaryConstant(t *testing.T) {
