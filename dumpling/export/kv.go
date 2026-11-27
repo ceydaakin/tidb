@@ -17,6 +17,7 @@ package export
 import (
 	"database/sql"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -156,6 +157,17 @@ func (d *Dumper) loadKVTables(reader tidbmeta.Reader) ([]kvDatabaseTables, error
 	if err != nil {
 		return nil, err
 	}
+	// Tables named by --tables-list that the snapshot does not have must fail
+	// the export like SQL mode does, instead of being silently left out.
+	// TiDB object names are case-insensitive, so match on lowercase names.
+	missing := make(map[tableName]string)
+	if d.conf.SpecifiedTables {
+		for db, tables := range d.conf.Tables {
+			for _, table := range tables {
+				missing[tableName{db: strings.ToLower(db), table: strings.ToLower(table.Name)}] = db + "." + table.Name
+			}
+		}
+	}
 	selected := make([]kvDatabaseTables, 0, len(databases))
 	for _, database := range databases {
 		if database.State != model.StatePublic || !d.conf.TableFilter.MatchSchema(database.Name.O) {
@@ -165,6 +177,10 @@ func (d *Dumper) loadKVTables(reader tidbmeta.Reader) ([]kvDatabaseTables, error
 		err := reader.IterTables(database.ID, func(table *model.TableInfo) error {
 			if err := d.tctx.Err(); err != nil {
 				return err
+			}
+			// Views and sequences exist even though they are not exported here.
+			if table.State == model.StatePublic && d.conf.TableFilter.MatchTable(database.Name.O, table.Name.O) {
+				delete(missing, tableName{db: database.Name.L, table: table.Name.L})
 			}
 			if table.State != model.StatePublic || table.IsView() || table.IsSequence() ||
 				!d.conf.TableFilter.MatchTable(database.Name.O, table.Name.O) {
@@ -183,6 +199,10 @@ func (d *Dumper) loadKVTables(reader tidbmeta.Reader) ([]kvDatabaseTables, error
 			return strings.Compare(left.Name.L, right.Name.L)
 		})
 		selected = append(selected, kvDatabaseTables{database: database, tables: tables})
+	}
+	if len(missing) > 0 {
+		names := slices.Sorted(maps.Values(missing))
+		return nil, errors.Errorf("Table '%s' doesn't exist", strings.Join(names, "', '"))
 	}
 	slices.SortFunc(selected, func(left, right kvDatabaseTables) int {
 		return model.LessDBInfo(left.database, right.database)

@@ -289,3 +289,57 @@ func TestDumpServiceColumnFilterValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestDumpServiceMissingTables(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("create database tables_list")
+	tk.MustExec("create table tables_list.present (id int primary key, v varchar(32))")
+	tk.MustExec("insert into tables_list.present values (1, 'first')")
+	tk.MustExec("create view tables_list.present_view as select id from tables_list.present")
+
+	for _, testCase := range []struct {
+		name   string
+		tables []string
+		err    string
+	}{
+		{name: "mixed", tables: []string{"tables_list.present", "tables_list.missing"}, err: "Table 'tables_list.missing' doesn't exist"},
+		{name: "missing", tables: []string{"tables_list.missing"}, err: "Table 'tables_list.missing' doesn't exist"},
+		{name: "missing db", tables: []string{"no_such_db.present"}, err: "Table 'no_such_db.present' doesn't exist"},
+		{name: "present", tables: []string{"tables_list.present"}},
+		{name: "case", tables: []string{"TABLES_LIST.Present"}},
+		{name: "view", tables: []string{"tables_list.present", "tables_list.present_view"}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			socket := dumpservicetest.Start(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				dumpservicetest.ServeRequest(store, writer, request)
+			}))
+			conf := DefaultConfig()
+			conf.DumpService = (&url.URL{Scheme: "unix", Path: socket}).String()
+			conf.OutputDirPath = t.TempDir()
+			conf.StatusAddr = ""
+			conf.FileType = FileFormatCSVString
+			var err error
+			conf.SpecifiedTables = true
+			conf.Tables, err = GetConfTables(testCase.tables)
+			require.NoError(t, err)
+			conf.TableFilter, err = ParseTableFilter(testCase.tables, []string{"*.*", DefaultTableFilter})
+			require.NoError(t, err)
+			conf.TableFilter = tf.CaseInsensitive(conf.TableFilter)
+			dumper, err := NewDumper(context.Background(), conf)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, dumper.Close()) })
+			err = dumper.Dump()
+			if testCase.err != "" {
+				require.ErrorContains(t, err, testCase.err)
+				_, err = os.Stat(filepath.Join(conf.OutputDirPath, "metadata"))
+				require.ErrorIs(t, err, os.ErrNotExist, "a failed export must not write completion metadata")
+				return
+			}
+			require.NoError(t, err)
+			content, err := os.ReadFile(filepath.Join(conf.OutputDirPath, "tables_list.present.000000000.csv"))
+			require.NoError(t, err)
+			require.Contains(t, string(content), "first")
+		})
+	}
+}
