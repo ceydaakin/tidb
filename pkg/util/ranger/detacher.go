@@ -292,6 +292,9 @@ func mergeTwoCNFRanges(sctx *rangerctx.RangerContext, cond expression.Expression
 						mergedResult.rangeResult.Ranges = intersection
 						mergedResult.rangeResult.AccessConds =
 							AppendConditionsIfNotExist(sctx.ExprCtx.GetEvalCtx(), mergedResult.rangeResult.AccessConds, []expression.Expression{cond})
+						// The intersected ranges are still approximate (e.g. prefix indexes), so keep cond's residual filters.
+						mergedResult.rangeResult.RemainedConds =
+							AppendConditionsIfNotExist(sctx.ExprCtx.GetEvalCtx(), mergedResult.rangeResult.RemainedConds, otherRangeResult.rangeResult.RemainedConds)
 					}
 				}
 			}
@@ -384,6 +387,9 @@ func chooseBetweenRangeAndPoint(sctx *rangerctx.RangerContext, r1 *DetachRangeRe
 			if len(r1Minusr2) == 0 && len(r2Minusr1) > 0 {
 				// Update final result and just update: Ranges, AccessConds and RemainedConds
 				r1.RemainedConds = removeConditions(sctx.ExprCtx.GetEvalCtx(), r1.RemainedConds, r2.rangeResult.AccessConds)
+				// Access conditions may only yield approximate ranges, e.g. for prefix indexes.
+				// Preserve the chosen candidate's residual filters when replacing the ranges.
+				r1.RemainedConds = AppendConditionsIfNotExist(sctx.ExprCtx.GetEvalCtx(), r1.RemainedConds, r2.rangeResult.RemainedConds)
 				r1.Ranges = r2.rangeResult.Ranges
 				r1.AccessConds = r2.rangeResult.AccessConds
 			}

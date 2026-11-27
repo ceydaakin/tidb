@@ -164,6 +164,25 @@ func TestRowFunctionMatchTheIndexRangeScan(t *testing.T) {
 }
 
 func TestRangeIntersection(t *testing.T) {
+	t.Run("issue73864", func(t *testing.T) {
+		store := testkit.CreateMockStore(t)
+		tk := testkit.NewTestKit(t, store)
+		tk.MustExec("use test")
+		tk.MustExec("create table r (a varchar(8) collate utf8mb4_bin, b int, c int, key idx(a(1), b))")
+		tk.MustExec("insert into r values ('aa',1,1),('ab',1,1),('ab',0,1),('ab',-1,1),('ax',1,1),('ba',1,1),('ca',1,1),('ab',1,0)")
+		tk.MustExec("set tidb_opt_range_max_size = 0")
+		tk.MustExec("set tidb_enable_index_merge = off")
+		for _, fixControl := range []string{"54337:ON,44389:OFF", "54337:OFF,44389:OFF", ""} {
+			t.Run("fixControl="+fixControl, func(t *testing.T) {
+				tk.MustExec(fmt.Sprintf("set tidb_opt_fix_control='%s'", fixControl))
+				// The prefix ranges of the OR also cover 'aa' and 'ax', so the OR must remain a filter.
+				for _, indexHint := range []string{"force index(idx)", "ignore index(idx)"} {
+					tk.MustQuery("select * from r " + indexHint + " where a in ('aa','ab','ba') and ((a='ab' and b>0) or a='ca') and c=1 order by a,b,c").Check(testkit.Rows("ab 1 1"))
+				}
+			})
+		}
+	})
+
 	t.Run("issue73063", func(t *testing.T) {
 		store := testkit.CreateMockStore(t)
 		tk := testkit.NewTestKit(t, store)
