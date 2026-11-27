@@ -72,7 +72,15 @@ func (lt *LogicalTopN) ReplaceExprColumns(replace map[string]*expression.Column)
 
 // HashCode inherits BaseLogicalPlan.LogicalPlan.<0th> implementation.
 
-// PredicatePushDown inherits BaseLogicalPlan.LogicalPlan.<1st> implementation.
+// PredicatePushDown implements base.LogicalPlan.<1st> interface.
+// TopN picks its rows from the whole child output, so a filter applied below it
+// changes which rows survive. Like Limit, it keeps all predicates above itself.
+// The PPD rule runs before TopN is derived, but later rules (e.g. the correlate
+// round) re-run PPD over subtrees that already contain a TopN.
+func (lt *LogicalTopN) PredicatePushDown(predicates []expression.Expression) ([]expression.Expression, base.LogicalPlan, error) {
+	_, _, err := lt.BaseLogicalPlan.PredicatePushDown(nil)
+	return predicates, lt, err
+}
 
 // PruneColumns implements base.LogicalPlan.<2nd> interface.
 // If any expression can view as a constant in execution stage, such as correlated column, constant,

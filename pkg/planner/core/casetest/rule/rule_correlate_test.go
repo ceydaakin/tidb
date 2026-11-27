@@ -340,4 +340,10 @@ func TestCorrelateLimitedSubqueryKeepsRows(t *testing.T) {
 		require.NotContains(t, fmt.Sprint(row), "TableDual")
 	}
 	tk.MustQuery("select * from t1 where a in (select a from t2 limit 5)").Sort().Check(testkit.Rows("1 1", "2 2"))
+
+	// issue:73865. The correlated equality must stay above the subquery's TopN:
+	// ORDER BY ... LIMIT picks its rows from the whole inner table, not from the
+	// rows matching each outer key.
+	tk.MustQuery("select * from t1 where a in (select a from t2 order by b desc limit 1)").Check(testkit.Rows("2 2"))
+	tk.MustQuery("select * from t1 where a in (select a from t2 order by b desc limit 1 offset 1)").Check(testkit.Rows("1 1"))
 }
